@@ -1,4 +1,4 @@
-import { AuditEventType } from "@prisma/client";
+import { AuditEventType, Prisma } from "@prisma/client";
 import { Client, TextChannel } from "discord.js";
 import { db } from "./database";
 
@@ -9,7 +9,7 @@ interface AuditParams {
   eventType: AuditEventType;
   roleId?: string;
   roleName?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Prisma.InputJsonObject;
 }
 
 export async function writeAuditLog(client: Client, params: AuditParams): Promise<void> {
