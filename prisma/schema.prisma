@@ -1,0 +1,113 @@
+// Discord Watchtower — Prisma Schema
+// Privileged Identity Manager for Discord
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Per-guild configuration
+model GuildConfig {
+  id                 String   @id @default(cuid())
+  guildId            String   @unique
+  // How long (in minutes) an elevated role session lasts
+  sessionDurationMin Int      @default(60)
+  // How many failed password attempts before lockout
+  lockoutThreshold   Int      @default(5)
+  // Discord channel ID where elevation alerts are posted
+  alertChannelId     String?
+  // Discord channel ID where audit logs are posted
+  auditChannelId     String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("guild_configs")
+}
+
+// Users who have registered a PIM password
+model PimUser {
+  id             String   @id @default(cuid())
+  discordUserId  String
+  guildId        String
+  passwordHash   String
+  failedAttempts Int      @default(0)
+  lockedAt       DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  eligibleRoles   EligibleRole[]
+  activeElevations ActiveElevation[]
+  auditLogs        AuditLog[]
+
+  @@unique([discordUserId, guildId])
+  @@map("pim_users")
+}
+
+// Roles a user is eligible to elevate into
+model EligibleRole {
+  id            String   @id @default(cuid())
+  pimUserId     String
+  roleId        String
+  roleName      String
+  guildId       String
+  grantedBy     String   // Discord user ID of the admin who granted eligibility
+  createdAt     DateTime @default(now())
+
+  pimUser PimUser @relation(fields: [pimUserId], references: [id], onDelete: Cascade)
+
+  @@unique([pimUserId, roleId])
+  @@map("eligible_roles")
+}
+
+// Currently active (elevated) role sessions
+model ActiveElevation {
+  id          String   @id @default(cuid())
+  pimUserId   String
+  roleId      String
+  roleName    String
+  guildId     String
+  elevatedAt  DateTime @default(now())
+  expiresAt   DateTime
+
+  pimUser PimUser @relation(fields: [pimUserId], references: [id], onDelete: Cascade)
+
+  @@unique([pimUserId, roleId])
+  @@map("active_elevations")
+}
+
+// Immutable audit trail of all PIM events
+model AuditLog {
+  id            String    @id @default(cuid())
+  guildId       String
+  pimUserId     String?
+  discordUserId String
+  eventType     AuditEventType
+  roleId        String?
+  roleName      String?
+  metadata      Json?
+  createdAt     DateTime  @default(now())
+
+  pimUser PimUser? @relation(fields: [pimUserId], references: [id], onDelete: SetNull)
+
+  @@index([guildId, createdAt])
+  @@index([discordUserId])
+  @@map("audit_logs")
+}
+
+enum AuditEventType {
+  PASSWORD_SET
+  PASSWORD_CHANGED
+  ELEVATION_REQUESTED
+  ELEVATION_GRANTED
+  ELEVATION_EXPIRED
+  ELEVATION_REVOKED
+  FAILED_ATTEMPT
+  ACCOUNT_LOCKED
+  ACCOUNT_UNLOCKED
+  ELIGIBILITY_GRANTED
+  ELIGIBILITY_REVOKED
+}
