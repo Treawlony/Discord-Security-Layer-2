@@ -1,10 +1,12 @@
 import "dotenv/config";
+import "./lib/env"; // validate required env vars before anything else
 import { REST, Routes } from "discord.js";
 import path from "path";
 import fs from "fs";
+import { env } from "./lib/env";
 
-const token = process.env.DISCORD_TOKEN!;
-const clientId = process.env.DISCORD_CLIENT_ID!;
+const token = env.DISCORD_TOKEN;
+const clientId = env.DISCORD_CLIENT_ID;
 const guildId = process.env.DISCORD_GUILD_ID; // optional for dev
 
 const commands: object[] = [];

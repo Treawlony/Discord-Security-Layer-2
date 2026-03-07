@@ -1,9 +1,11 @@
 import "dotenv/config";
+import "./lib/env"; // validate required env vars before anything else
 import { Client, GatewayIntentBits, Collection } from "discord.js";
 import { loadCommands } from "./lib/commandLoader";
 import { registerEvents } from "./lib/eventLoader";
 import { startExpiryJob } from "./jobs/expireElevations";
 import { db } from "./lib/database";
+import { env } from "./lib/env";
 
 const client = new Client({
   intents: [
@@ -23,7 +25,7 @@ async function main() {
   registerEvents(client);
   startExpiryJob(client);
 
-  await client.login(process.env.DISCORD_TOKEN);
+  await client.login(env.DISCORD_TOKEN);
 }
 
 main().catch((err) => {
