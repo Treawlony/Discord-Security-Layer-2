@@ -12,7 +12,7 @@ export async function loadCommands(client: Client): Promise<void> {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         walkDir(fullPath);
-      } else if (entry.name.endsWith(".js") || entry.name.endsWith(".ts")) {
+      } else if ((entry.name.endsWith(".js") || entry.name.endsWith(".ts")) && !entry.name.endsWith(".d.ts")) {
         const command = require(fullPath);
         if ("data" in command && "execute" in command) {
           commands.set(command.data.name, command);
