@@ -1,0 +1,12 @@
+node_modules
+dist
+.env
+.env.*
+*.log
+.git
+.gitignore
+.eslintrc.json
+README.md
+CLAUDE.md
+docs
+pgdata

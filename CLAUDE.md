@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Discord Watchtower is a **Privileged Identity Manager (PIM)** bot for Discord. It acts as a second security layer on top of a standard Discord bot (Good Knight). Rather than assigning powerful roles permanently, admins designate which roles each user is _eligible_ for. Users set their own password, then invoke `/elevate`, authenticate, and pick from a dropdown of eligible roles. The role is granted for a configurable duration and then automatically removed.
+Discord Watchtower is a **Privileged Identity Manager (PIM)** Discord bot. Rather than assigning powerful roles permanently, admins designate which roles each user is _eligible_ for. Users set their own password, then invoke `/elevate`, authenticate, and pick from a dropdown of eligible roles. The role is granted for a configurable duration and then automatically removed.
 
 ## Tech Stack
 
@@ -118,16 +118,35 @@ npm run typecheck
 npm run lint
 ```
 
-## Docker Workflow
+## Deployment — GitHub + Portainer
+
+The project is deployed via **Portainer GitOps**: Portainer pulls `docker-compose.yml` directly from the GitHub repo and builds/runs the stack. No `.env` file is used in production — all variables are set in the Portainer stack UI.
+
+### Setting up the stack in Portainer
+
+1. In Portainer → **Stacks** → **Add stack** → **Repository**
+2. Set the repository URL to the GitHub repo
+3. Set the compose file path to `docker-compose.yml`
+4. Under **Environment variables**, add each variable from the table below
+5. Click **Deploy the stack** — Portainer builds the image and starts both services
+
+### Re-deploying after a push
+
+In the Portainer stack UI, click **Pull and redeploy** to pick up new commits. You can also enable **GitOps updates** in Portainer to auto-redeploy on push.
+
+### Local development (Docker)
 
 ```bash
-# Start bot + database
+# Copy and fill in credentials
+cp .env.example .env
+
+# Start both services locally
 docker compose up -d
 
-# View logs
+# View bot logs
 docker compose logs -f bot
 
-# Tear down (keeps volume)
+# Tear down (keeps DB volume)
 docker compose down
 
 # Tear down and wipe database
@@ -136,17 +155,21 @@ docker compose down -v
 
 ## Environment Variables
 
-See `.env.example` for all variables. Critical ones:
+All variables must be set in **Portainer → Stack → Environment variables** for production. For local development, copy `.env.example` to `.env`.
 
-| Variable | Description |
-|---|---|
-| `DISCORD_TOKEN` | Bot token from Discord Developer Portal |
-| `DISCORD_CLIENT_ID` | Application ID |
-| `DISCORD_GUILD_ID` | (Optional) Restrict command deployment to one guild for dev |
-| `DATABASE_URL` | Full PostgreSQL connection string |
-| `POSTGRES_USER/PASSWORD/DB` | Credentials for Docker Compose |
-| `DEFAULT_SESSION_DURATION_MIN` | Default elevation session length (minutes) |
-| `DEFAULT_LOCKOUT_THRESHOLD` | Default failed attempts before lockout |
+| Variable | Required | Description |
+|---|---|---|
+| `DISCORD_TOKEN` | Yes | Bot token from Discord Developer Portal |
+| `DISCORD_CLIENT_ID` | Yes | Application ID |
+| `POSTGRES_USER` | Yes | PostgreSQL username |
+| `POSTGRES_PASSWORD` | Yes | PostgreSQL password |
+| `POSTGRES_DB` | Yes | PostgreSQL database name |
+| `DEFAULT_SESSION_DURATION_MIN` | No | Elevation session length in minutes (default: 60) |
+| `DEFAULT_LOCKOUT_THRESHOLD` | No | Failed attempts before lockout (default: 5) |
+
+> `DATABASE_URL` is constructed automatically from the Postgres vars — do **not** set it separately in Portainer.
+>
+> `DISCORD_GUILD_ID` is only used for local slash command deployment (`npm run deploy-commands`). Do not set it in Portainer.
 
 ## Required Bot Permissions
 
