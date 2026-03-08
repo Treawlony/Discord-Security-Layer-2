@@ -80,6 +80,7 @@ Stored in `GuildConfig`. Defaults come from `.env`:
 - **Not configured** (`adminRoleId = null`): any user with Discord `Administrator` can run admin commands.
 - **Configured** (`adminRoleId` set): only users holding that Discord role can run admin commands. `Administrator` is no longer sufficient.
 - Set the admin role via `/watchtower-config admin-role:@role`.
+- **New guild setup**: after inviting the bot, a Discord Administrator must run `/watchtower-config admin-role:@role` to register the Watchtower Admin role. Until then the bot is in bootstrap mode (Administrator-only).
 - **Recovery if locked out**: if the admin role is deleted from Discord, you must edit the `guild_configs` table directly (`UPDATE guild_configs SET admin_role_id = NULL WHERE guild_id = '...'`) to re-enter bootstrap mode.
 
 ## Database Schema Summary
@@ -127,35 +128,12 @@ npm run lint
 
 The project is deployed via **Portainer GitOps**: Portainer pulls `docker-compose.yml` directly from the GitHub repo and builds/runs the stack. No `.env` file is used in production — all variables are set in the Portainer stack UI.
 
-### Setting up the stack in Portainer
-
-1. In Portainer → **Stacks** → **Add stack** → **Repository**
-2. Set the repository URL to the GitHub repo
-3. Set the compose file path to `docker-compose.yml`
-4. Under **Environment variables**, add each variable from the table below
-5. Click **Deploy the stack** — Portainer builds the image and starts both services
-
-### Re-deploying after a push
-
-In the Portainer stack UI, click **Pull and redeploy** to pick up new commits. You can also enable **GitOps updates** in Portainer to auto-redeploy on push.
-
 ### Local development (Docker)
 
 ```bash
-# Copy and fill in credentials
-cp .env.example .env
-
-# Start both services locally
-docker compose up -d
-
-# View bot logs
-docker compose logs -f bot
-
-# Tear down (keeps DB volume)
-docker compose down
-
-# Tear down and wipe database
-docker compose down -v
+cp .env.example .env && docker compose up -d   # start services
+docker compose logs -f bot                      # view bot logs
+docker compose down                             # tear down (add -v to wipe DB)
 ```
 
 ## Environment Variables
@@ -176,12 +154,7 @@ All variables must be set in **Portainer → Stack → Environment variables** f
 >
 ## Required Bot Permissions
 
-The bot needs the following permissions in Discord:
-- **Manage Roles** — to add/remove elevated roles
-- **Send Messages** — to post to alert/audit channels
-- **Use Slash Commands** — (automatically granted)
-
-**Important**: The bot's role must be positioned _above_ all roles it manages in the server role hierarchy.
+Required Discord permissions: **Manage Roles** (add/remove elevated roles), **Send Messages** (alert/audit channels), **Use Slash Commands**. The bot's role must be positioned _above_ all roles it manages in the server role hierarchy.
 
 ## Adding New Commands
 
@@ -193,6 +166,7 @@ The bot needs the following permissions in Discord:
 ## Coding Conventions
 
 - All user-facing replies must use `flags: MessageFlags.Ephemeral` (import `MessageFlags` from `discord.js`). The `ephemeral: true` option is deprecated in discord.js v14+ and must not be used.
+- `interaction.reply()` and `interaction.followUp()` require `flags: MessageFlags.Ephemeral as number` (explicit cast). `deferReply()` accepts `MessageFlags.Ephemeral` without a cast. Do not remove the `as number` cast from `reply()`/`followUp()` calls.
 - Always `deferReply` at the start of command handlers
 - Never store raw passwords — always hash before writing to DB
 - Write an `AuditLog` entry for every security-relevant event
@@ -200,11 +174,13 @@ The bot needs the following permissions in Discord:
 - Use `getOrCreateGuildConfig()` whenever you need guild settings — never hardcode defaults inline
 - All admin commands MUST call `isWatchtowerAdmin(member, config)` immediately after `deferReply`. The `member` is `interaction.member as GuildMember`. The `config` comes from `getOrCreateGuildConfig()`. Include `isWatchtowerAdmin: true` in audit log metadata for all admin-originated events.
 - `setDefaultMemberPermissions` on the SlashCommandBuilder is for Discord UI visibility only — it is NOT a security control. Never rely on it as the sole gate.
+- Admin commands intentionally have **no** `setDefaultMemberPermissions` call — they are visible to all users in the Discord UI. `isWatchtowerAdmin()` is the sole gate and returns a user-facing error to unauthorized callers. Do not add `setDefaultMemberPermissions` back to admin commands.
 
 ## Database Migration Conventions
 
 - All column names in migration SQL must be **camelCase** (e.g., `"guildId"`, `"alertChannelId"`, `"adminRoleId"`). The project's init migration established this pattern. Using snake_case causes Prisma P2022 "column not found" errors at runtime.
 - Never write raw snake_case column names in `.sql` migration files.
+- `prisma` CLI must remain in `dependencies` (not `devDependencies`). The Docker runner stage runs `npm ci --omit=dev`; if `prisma` is a devDep it is dropped and `prisma migrate deploy` in the container startup CMD silently skips, leaving the DB schema behind the code.
 
 ## Versioning
 
