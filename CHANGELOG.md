@@ -10,6 +10,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.0] — 2026-03-08
+
+### Added
+- **Role expiry notifications** — the expiry cron job now runs a warning scan each minute. When a session is within the configured warning window (`notifyBeforeMin`, default 5 min), the bot posts a message to the audit channel pinging the user with an **Extend Session** button. Clicking it resets `expiresAt` to a full new session and clears `notifiedAt` so the warning fires again near the new expiry.
+- **Elevation-granted message with admin action buttons** — when a role is granted, the bot posts to the audit channel (preferred) or alert channel (fallback) with two admin-only buttons: **Remove Permission** (immediately revokes the elevation) and **Remove Permission and Block** (revokes and sets `PimUser.blockedAt`, preventing future elevations until unblocked).
+- **`/watchtower-config notify-before`** — new integer option (0–60 min) to configure how many minutes before expiry the warning fires. Setting to `0` disables notifications. Default is 5. The config embed now shows an "Expiry Warning" field. A caution note is shown when `notify-before` exceeds `session-duration`.
+- **`PimUser.blockedAt`** — new nullable field. Set by the "Remove Permission and Block" button. Prevents `/elevate` from proceeding; cleared by `/watchtower-unlock`.
+- **`/watchtower-unlock` now clears `blockedAt`** in addition to `lockedAt` and `failedAttempts`. The command succeeds when either or both locks are set. Reply note indicates when a block was also cleared. Audit log metadata includes `clearedBlock: true` when applicable.
+- **`src/lib/buttonHandlers.ts`** — new module containing all three button interaction handlers (`handleExtendSession`, `handleRemovePerm`, `handleRemovePermBlock`). Each handler re-fetches the elevation from DB, re-validates auth server-side, performs the action, writes an audit log, disables the button on the original message, and replies ephemerally.
+- **Button routing in `interactionCreate.ts`** — new `isButton()` branch routes `extend_session:`, `remove_perm_block:`, and `remove_perm:` prefixes to their handlers. `remove_perm_block:` is checked before `remove_perm:` to prevent prefix collision.
+- **Five new `AuditEventType` values**: `ELEVATION_EXPIRY_WARNING`, `ELEVATION_EXTENDED`, `ELEVATION_ADMIN_REVOKED`, `ELEVATION_ADMIN_REVOKED_BLOCKED`, `ELEVATION_BLOCKED`.
+- **`writeAuditLog` `skipChannelPost` option** — new optional field on `AuditParams`. When `true`, suppresses the plain-text audit channel echo so callers that have already posted an interactive message do not produce a duplicate line. Used by `elevate.ts` (ELEVATION_GRANTED) and `expireElevations.ts` (ELEVATION_EXPIRY_WARNING).
+
+### Changed
+- `/watchtower-config` embed updated: "Expiry Warning" field added between "Session Duration" and "Lockout Threshold". Audit channel description updated to note it hosts interactive alerts.
+- `/watchtower-unlock` command description updated to reflect that it also clears admin blocks.
+- `/help` embed updated: `/watchtower-unlock` description updated; `/watchtower-config` description updated to mention expiry warning timing.
+- `expireElevations.ts` refactored: cron callback now calls `runWarningScan()` then `runExpiryScan()` as separate named functions.
+
+### Migration
+- `prisma/migrations/20260308000001_add_expiry_notifications/migration.sql` — additive only:
+  - `"notifyBeforeMin" INTEGER NOT NULL DEFAULT 5` on `guild_configs`
+  - `"notifiedAt" TIMESTAMP(3)` (nullable) on `active_elevations`
+  - `"blockedAt" TIMESTAMP(3)` (nullable) on `pim_users`
+  - Five new `AuditEventType` enum values via `ALTER TYPE ADD VALUE`
+
+---
+
 ## [0.0.3] — 2026-03-08
 
 ### Fixed

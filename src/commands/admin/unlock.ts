@@ -12,8 +12,10 @@ import { isWatchtowerAdmin } from "../../lib/permissions";
 
 export const data = new SlashCommandBuilder()
   .setName("watchtower-unlock")
-  .setDescription("Unlock a PIM account that was locked due to failed attempts.")
-  .addUserOption((opt) => opt.setName("user").setDescription("The user to unlock").setRequired(true));
+  .setDescription("Unlock or unblock a PIM account.")
+  .addUserOption((opt) =>
+    opt.setName("user").setDescription("The user to unlock").setRequired(true)
+  );
 
 export async function execute(interaction: ChatInputCommandInteraction, client: Client) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -38,13 +40,16 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     return interaction.editReply(`<@${target.id}> does not have a PIM account.`);
   }
 
-  if (!pimUser.lockedAt) {
-    return interaction.editReply(`<@${target.id}>'s account is not locked.`);
+  // Allow unlock if either lockedAt or blockedAt is set
+  if (!pimUser.lockedAt && !pimUser.blockedAt) {
+    return interaction.editReply(`<@${target.id}>'s account is not locked or blocked.`);
   }
+
+  const wasBlocked = pimUser.blockedAt !== null;
 
   await db.pimUser.update({
     where: { id: pimUser.id },
-    data: { lockedAt: null, failedAttempts: 0 },
+    data: { lockedAt: null, failedAttempts: 0, blockedAt: null },
   });
 
   await writeAuditLog(client, {
@@ -52,8 +57,15 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     discordUserId: target.id,
     pimUserId: pimUser.id,
     eventType: "ACCOUNT_UNLOCKED",
-    metadata: { unlockedBy: interaction.user.id, isWatchtowerAdmin: true },
+    metadata: {
+      unlockedBy: interaction.user.id,
+      isWatchtowerAdmin: true,
+      clearedBlock: wasBlocked,
+    },
   });
 
-  return interaction.editReply(`<@${target.id}>'s PIM account has been unlocked.`);
+  const blockNote = wasBlocked ? " Their block has also been cleared." : "";
+  return interaction.editReply(
+    `<@${target.id}>'s PIM account has been unlocked.${blockNote}`
+  );
 }

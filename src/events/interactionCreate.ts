@@ -1,6 +1,32 @@
-import { Client, Interaction, MessageFlags } from "discord.js";
+import { ButtonInteraction, Client, Interaction, MessageFlags } from "discord.js";
+import {
+  handleExtendSession,
+  handleRemovePerm,
+  handleRemovePermBlock,
+} from "../lib/buttonHandlers";
 
 export async function onInteractionCreate(client: Client, interaction: Interaction): Promise<void> {
+  // Button interactions — route by customId prefix.
+  // Note: "remove_perm_block:" is checked before "remove_perm:" because
+  // startsWith("remove_perm:") would otherwise also match "remove_perm_block:".
+  if (interaction.isButton()) {
+    const { customId } = interaction;
+    const btn = interaction as ButtonInteraction;
+    try {
+      if (customId.startsWith("extend_session:")) {
+        await handleExtendSession(btn, client);
+      } else if (customId.startsWith("remove_perm_block:")) {
+        await handleRemovePermBlock(btn, client);
+      } else if (customId.startsWith("remove_perm:")) {
+        await handleRemovePerm(btn, client);
+      }
+      // Unknown button customIds are silently ignored.
+    } catch (err) {
+      console.error(`[Button:${customId}]`, err);
+    }
+    return;
+  }
+
   if (!interaction.isChatInputCommand()) return;
 
   const command = (client as any).commands?.get(interaction.commandName);

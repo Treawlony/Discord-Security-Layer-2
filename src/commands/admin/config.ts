@@ -28,11 +28,18 @@ export const data = new SlashCommandBuilder()
       .setMinValue(1)
       .setMaxValue(20)
   )
+  .addIntegerOption((opt) =>
+    opt
+      .setName("notify-before")
+      .setDescription("Minutes before expiry to warn the user in the audit channel (0 to disable)")
+      .setMinValue(0)
+      .setMaxValue(60)
+  )
   .addChannelOption((opt) =>
     opt.setName("alert-channel").setDescription("Channel to post elevation alerts")
   )
   .addChannelOption((opt) =>
-    opt.setName("audit-channel").setDescription("Channel to post audit log entries")
+    opt.setName("audit-channel").setDescription("Channel to post audit log entries and interactive alerts")
   )
   .addRoleOption((opt) =>
     opt
@@ -55,6 +62,7 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
 
   const sessionDuration = interaction.options.getInteger("session-duration");
   const lockoutThreshold = interaction.options.getInteger("lockout-threshold");
+  const notifyBefore = interaction.options.getInteger("notify-before");
   const alertChannel = interaction.options.getChannel("alert-channel");
   const auditChannel = interaction.options.getChannel("audit-channel");
   const adminRole = interaction.options.getRole("admin-role");
@@ -72,6 +80,7 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     data: {
       sessionDurationMin: sessionDuration ?? current.sessionDurationMin,
       lockoutThreshold: lockoutThreshold ?? current.lockoutThreshold,
+      notifyBeforeMin: notifyBefore ?? current.notifyBeforeMin,
       alertChannelId: alertChannel ? alertChannel.id : current.alertChannelId,
       auditChannelId: auditChannel ? auditChannel.id : current.auditChannelId,
       adminRoleId: adminRoleChanged ? adminRole!.id : current.adminRoleId,
@@ -99,11 +108,16 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     ? `<@&${updated.adminRoleId}>`
     : "Not set — using Discord Administrator";
 
+  const expiryWarningDisplay = updated.notifyBeforeMin === 0
+    ? "Disabled"
+    : `${updated.notifyBeforeMin} min before expiry`;
+
   const embed = new EmbedBuilder()
     .setTitle("Watchtower Configuration")
     .setColor(0x57f287)
     .addFields(
       { name: "Session Duration", value: `${updated.sessionDurationMin} minutes`, inline: true },
+      { name: "Expiry Warning", value: expiryWarningDisplay, inline: true },
       { name: "Lockout Threshold", value: `${updated.lockoutThreshold} attempts`, inline: true },
       { name: "Alert Channel", value: updated.alertChannelId ? `<#${updated.alertChannelId}>` : "Not set", inline: true },
       { name: "Audit Channel", value: updated.auditChannelId ? `<#${updated.auditChannelId}>` : "Not set", inline: true },
@@ -111,9 +125,18 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     )
     .setTimestamp();
 
+  // Caution note if notify-before exceeds session duration
+  const cautionNote =
+    notifyBefore !== null && notifyBefore > updated.sessionDurationMin
+      ? `Note: notify-before (${notifyBefore} min) exceeds session-duration (${updated.sessionDurationMin} min). The warning will fire on the first cron tick after every new elevation.`
+      : undefined;
+
   const warning = adminRoleChanged
     ? "**Important:** Once the Admin Role is set, only members with that role can manage Watchtower — including running this command. Ensure you hold this role before proceeding."
     : undefined;
 
-  return interaction.editReply({ embeds: [embed], content: warning });
+  const contentParts = [warning, cautionNote].filter(Boolean);
+  const content = contentParts.length > 0 ? contentParts.join("\n\n") : undefined;
+
+  return interaction.editReply({ embeds: [embed], content });
 }

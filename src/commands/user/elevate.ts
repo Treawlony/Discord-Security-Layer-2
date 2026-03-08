@@ -5,8 +5,11 @@ import {
   ActionRowBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ComponentType,
   MessageFlags,
+  TextChannel,
 } from "discord.js";
 import { db } from "../../lib/database";
 import { verifyPassword } from "../../lib/crypto";
@@ -42,6 +45,13 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
   if (pimUser.lockedAt) {
     return interaction.editReply(
       "Your PIM account is locked due to too many failed attempts. Contact an administrator."
+    );
+  }
+
+  // Block check — set by admin "Remove Permission and Block" action
+  if (pimUser.blockedAt) {
+    return interaction.editReply(
+      "Your PIM account has been blocked by an administrator. Contact a Watchtower Admin to restore access."
     );
   }
 
@@ -147,12 +157,14 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
       return;
     }
 
-    await db.activeElevation.upsert({
+    const elevation = await db.activeElevation.upsert({
       where: { pimUserId_roleId: { pimUserId: pimUser.id, roleId } },
-      update: { expiresAt, elevatedAt: new Date() },
+      update: { expiresAt, elevatedAt: new Date(), notifiedAt: null },
       create: { pimUserId: pimUser.id, roleId, roleName: eligible.roleName, guildId, expiresAt },
     });
 
+    // skipChannelPost: the interactive message with admin buttons is posted below;
+    // we do not want writeAuditLog to also emit a plain-text echo to the same channel.
     await writeAuditLog(client, {
       guildId,
       discordUserId,
@@ -161,17 +173,51 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
       roleId,
       roleName: eligible.roleName,
       metadata: { expiresAt: expiresAt.toISOString() },
+      skipChannelPost: true,
     });
 
-    // Admin alert
-    const config2 = await getOrCreateGuildConfig(guildId);
-    if (config2.alertChannelId) {
+    // Fetch fresh config to get channel IDs
+    const freshConfig = await getOrCreateGuildConfig(guildId);
+    const expiryUnix = Math.floor(expiresAt.getTime() / 1000);
+
+    if (freshConfig.auditChannelId) {
+      // Post to audit channel with admin action buttons
+      try {
+        const auditChannel = await client.channels.fetch(freshConfig.auditChannelId) as TextChannel;
+        if (auditChannel?.isTextBased()) {
+          const removeBtn = new ButtonBuilder()
+            .setCustomId(`remove_perm:${elevation.id}`)
+            .setLabel("Remove Permission")
+            .setStyle(ButtonStyle.Danger);
+
+          const removeBlockBtn = new ButtonBuilder()
+            .setCustomId(`remove_perm_block:${elevation.id}`)
+            .setLabel("Remove Permission and Block")
+            .setStyle(ButtonStyle.Danger);
+
+          const adminRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+            removeBtn,
+            removeBlockBtn
+          );
+
+          await auditChannel.send({
+            content:
+              `⬆️ **PIM Elevation** — <@${discordUserId}> has been granted **${eligible.roleName}** until <t:${expiryUnix}:R>`,
+            components: [adminRow],
+          });
+        }
+      } catch (err) {
+        // Non-fatal — elevation is already granted; channel post is best-effort
+        console.error("[elevate] Failed to post to audit channel:", err);
+      }
+    } else if (freshConfig.alertChannelId) {
+      // Fallback: plain-text alert to alert channel (no buttons — not an audit channel)
       try {
         const guild = await client.guilds.fetch(guildId);
-        const alertChannel = guild.channels.cache.get(config2.alertChannelId);
+        const alertChannel = guild.channels.cache.get(freshConfig.alertChannelId);
         if (alertChannel?.isTextBased()) {
-          await (alertChannel as any).send(
-            `⬆️ **PIM Elevation** — <@${discordUserId}> has been granted **${eligible.roleName}** until <t:${Math.floor(expiresAt.getTime() / 1000)}:R>`
+          await (alertChannel as TextChannel).send(
+            `⬆️ **PIM Elevation** — <@${discordUserId}> has been granted **${eligible.roleName}** until <t:${expiryUnix}:R>`
           );
         }
       } catch {
@@ -180,7 +226,7 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     }
 
     await interaction.editReply({
-      content: `You have been elevated to **${eligible.roleName}** until <t:${Math.floor(expiresAt.getTime() / 1000)}:R>.`,
+      content: `You have been elevated to **${eligible.roleName}** until <t:${expiryUnix}:R>.`,
       components: [],
     });
   });

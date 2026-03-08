@@ -27,24 +27,25 @@ src/
       assign.ts     # /watchtower-assign  — grant role eligibility to a user
       revoke.ts     # /watchtower-revoke  — remove eligibility (and active elevation)
       list.ts       # /watchtower-list    — view all assignments
-      unlock.ts     # /watchtower-unlock  — unlock a locked-out PIM account
-      config.ts     # /watchtower-config  — view/update guild settings (incl. admin role)
+      unlock.ts     # /watchtower-unlock  — unlock a locked-out or admin-blocked PIM account
+      config.ts     # /watchtower-config  — view/update guild settings (incl. admin role, notify-before)
     user/           # User-facing slash commands
       set-password.ts  # /set-password   — register or change PIM password
       elevate.ts       # /elevate        — authenticate + select role to elevate
   events/
     ready.ts             # Bot ready handler
-    interactionCreate.ts # Routes interactions to command handlers
+    interactionCreate.ts # Routes slash commands AND button interactions
   lib/
-    database.ts    # Prisma singleton
-    crypto.ts      # bcrypt helpers + Zod password schema
-    audit.ts       # Write audit log to DB and Discord channel
-    guildConfig.ts # Upsert guild config with defaults
-    permissions.ts # isWatchtowerAdmin() — runtime admin permission check
+    database.ts       # Prisma singleton
+    crypto.ts         # bcrypt helpers + Zod password schema
+    audit.ts          # Write audit log to DB and Discord channel (see skipChannelPost)
+    guildConfig.ts    # Upsert guild config with defaults
+    permissions.ts    # isWatchtowerAdmin() — runtime admin permission check
+    buttonHandlers.ts # Button interaction handlers (extend_session, remove_perm, remove_perm_block)
     commandLoader.ts  # Auto-discovers and loads all commands
     eventLoader.ts    # Registers Discord event handlers
   jobs/
-    expireElevations.ts  # node-cron job — removes expired elevated roles every minute
+    expireElevations.ts  # node-cron job — warning scan + expiry scan, runs every minute
   index.ts           # Entrypoint
 prisma/
   schema.prisma  # All DB models (GuildConfig, PimUser, EligibleRole, ActiveElevation, AuditLog)
@@ -57,23 +58,28 @@ prisma/
 2. User runs `/elevate`, enters their password
 3. Bot verifies password, resets failed-attempt counter on success
 4. Bot presents a string-select menu with the user's eligible roles
-5. User selects a role → role is assigned in Discord + `ActiveElevation` record created
-6. The expiry cron job checks every minute for expired sessions and removes the role
+5. User selects a role → role is assigned in Discord + `ActiveElevation` record created + interactive message posted to audit channel with "Remove Permission" / "Remove Permission and Block" buttons
+6. The cron job runs every minute:
+   - **Warning scan**: finds sessions within `notifyBeforeMin` of expiry with `notifiedAt IS NULL`, posts a warning to the audit channel with an "Extend Session" button, sets `notifiedAt`
+   - **Expiry scan**: finds sessions past `expiresAt`, removes the Discord role, deletes the record
 
 ### Security Controls
 - **Password hashing**: bcrypt with 12 salt rounds; passwords never stored in plaintext
 - **Complexity rules** (enforced by Zod at `/set-password`): min 8 chars, uppercase, lowercase, number, special char
 - **Lockout**: configurable N failed attempts → `lockedAt` set → admin must run `/watchtower-unlock`
-- **Ephemeral replies**: all sensitive interactions use `ephemeral: true`
+- **Admin block**: admin can click "Remove Permission and Block" in audit channel → `blockedAt` set on `PimUser` → user cannot elevate until admin runs `/watchtower-unlock`
+- **Ephemeral replies**: all sensitive interactions use `flags: MessageFlags.Ephemeral`
 - **Audit log**: every event written to `audit_logs` table + optionally posted to a Discord channel
 - **Watchtower Admin role**: bot management is gated by `isWatchtowerAdmin()` at runtime in every admin command. `setDefaultMemberPermissions` on the SlashCommandBuilder is UI-only and is NOT the security gate. See `src/lib/permissions.ts`.
+- **Button auth**: button handlers always re-fetch the elevation record from DB and re-validate auth server-side on every click. Never trust the `customId` alone.
 
 ### Guild Configuration (per-server)
 Stored in `GuildConfig`. Defaults come from `.env`:
 - `sessionDurationMin` (default: 60) — how long elevation lasts
 - `lockoutThreshold` (default: 5) — failed attempts before lockout
-- `alertChannelId` — channel for elevation alerts
-- `auditChannelId` — channel for audit log messages
+- `notifyBeforeMin` (default: 5) — minutes before expiry to post warning; `0` disables notifications
+- `alertChannelId` — fallback channel for plain-text elevation alerts (used when `auditChannelId` is not set)
+- `auditChannelId` — primary channel for audit log messages and interactive button messages (warnings, elevation grants)
 - `adminRoleId` (default: null) — Discord role ID of the Watchtower Admin role. When null, bot management falls back to Discord `Administrator` permission (bootstrap mode). Once set, this role is the **sole** gate — `Administrator` alone is denied.
 
 ### Watchtower Admin Role — Bootstrap Behaviour
@@ -86,10 +92,10 @@ Stored in `GuildConfig`. Defaults come from `.env`:
 ## Database Schema Summary
 
 ```
-GuildConfig       — per-guild settings
-PimUser           — registered users (hashed password, lockout state)
+GuildConfig       — per-guild settings (incl. notifyBeforeMin)
+PimUser           — registered users (hashed password, lockout state, blockedAt)
 EligibleRole      — which roles a PimUser may elevate to
-ActiveElevation   — in-progress elevation sessions with expiry timestamps
+ActiveElevation   — in-progress elevation sessions with expiry timestamps (incl. notifiedAt)
 AuditLog          — immutable event log (AuditEventType enum)
 ```
 
@@ -175,6 +181,29 @@ Required Discord permissions: **Manage Roles** (add/remove elevated roles), **Se
 - All admin commands MUST call `isWatchtowerAdmin(member, config)` immediately after `deferReply`. The `member` is `interaction.member as GuildMember`. The `config` comes from `getOrCreateGuildConfig()`. Include `isWatchtowerAdmin: true` in audit log metadata for all admin-originated events.
 - `setDefaultMemberPermissions` on the SlashCommandBuilder is for Discord UI visibility only — it is NOT a security control. Never rely on it as the sole gate.
 - Admin commands intentionally have **no** `setDefaultMemberPermissions` call — they are visible to all users in the Discord UI. `isWatchtowerAdmin()` is the sole gate and returns a user-facing error to unauthorized callers. Do not add `setDefaultMemberPermissions` back to admin commands.
+
+### Button Interaction Conventions
+
+- Button handlers live in `src/lib/buttonHandlers.ts`. Each handler is an exported `async function(interaction: ButtonInteraction, client: Client): Promise<void>`.
+- Button handlers MUST `deferReply({ flags: MessageFlags.Ephemeral })` as their first statement — Discord requires acknowledgement within 3 seconds.
+- Button `customId` format: `<action>:<recordId>`. The record ID is parsed with `.slice("<action>:".length)`.
+- Always re-fetch the DB record inside the handler and guard against not-found (the record may have been deleted by the expiry scan between message post and button click). Never rely on data embedded in the `customId`.
+- Auth checks in button handlers: "Extend Session" checks `interaction.user.id === elevation.pimUser.discordUserId`; "Remove Permission" and "Remove Permission and Block" call `isWatchtowerAdmin(interaction.member as GuildMember, config)`.
+- After performing the action, update the original message's components to disabled buttons (wrapped in try/catch — non-fatal if the message was deleted).
+- Button routing in `interactionCreate.ts` uses `customId.startsWith("<prefix>")`. When two prefixes share a common start (e.g. `remove_perm:` and `remove_perm_block:`), the **longer/more-specific prefix must be checked first**.
+
+### `writeAuditLog` — `skipChannelPost`
+
+- `writeAuditLog` always posts a plain-text echo to the audit channel by default.
+- When your code has already posted its own interactive message (with buttons) to the audit channel for the same event, pass `skipChannelPost: true` to suppress the duplicate echo.
+- Current callers using `skipChannelPost: true`: `elevate.ts` for `ELEVATION_GRANTED`, `expireElevations.ts` for `ELEVATION_EXPIRY_WARNING`.
+
+### `PimUser` — `lockedAt` vs `blockedAt`
+
+- `lockedAt`: set automatically after N failed password attempts (`ACCOUNT_LOCKED`). Cleared by `/watchtower-unlock`.
+- `blockedAt`: set explicitly by an admin via the "Remove Permission and Block" button (`ELEVATION_BLOCKED`). Cleared by `/watchtower-unlock`.
+- Both are checked in `/elevate` before proceeding (lockout check first, block check second).
+- Both are cleared by `/watchtower-unlock` in a single `pimUser.update` call.
 
 ## Database Migration Conventions
 

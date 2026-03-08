@@ -59,7 +59,8 @@ describe("help command — execute", () => {
   it("defers the reply as ephemeral", async () => {
     await execute(interaction, {} as Client);
     expect(interaction.deferReply).toHaveBeenCalledTimes(1);
-    expect(interaction.deferReply).toHaveBeenCalledWith({ ephemeral: true });
+    // discord.js v14 convention: MessageFlags.Ephemeral (64) rather than deprecated ephemeral: true
+    expect(interaction.deferReply).toHaveBeenCalledWith({ flags: 64 });
   });
 
   it("calls editReply exactly once", async () => {
@@ -128,13 +129,13 @@ describe("help command — execute", () => {
     expect(gettingStarted!.value).toContain("/elevate");
   });
 
-  it("Admin Commands field mentions required permissions", async () => {
+  it("Admin Commands field mentions required role", async () => {
     await execute(interaction, {} as Client);
     const call = interaction.editReply.mock.calls[0][0] as { embeds: Array<{ toJSON(): Record<string, unknown> }> };
     const embedJson = call.embeds[0].toJSON() as { fields: Array<{ name: string; value: string }> };
     const adminField = embedJson.fields.find((f) => f.name.includes("Admin"));
     expect(adminField).toBeDefined();
-    expect(adminField!.value.toLowerCase()).toContain("permission");
+    expect(adminField!.value.toLowerCase()).toContain("watchtower admin role");
   });
 
   it("embed has a footer indicating ephemeral nature", async () => {

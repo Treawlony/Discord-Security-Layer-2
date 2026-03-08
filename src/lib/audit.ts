@@ -10,6 +10,10 @@ interface AuditParams {
   roleId?: string;
   roleName?: string;
   metadata?: Prisma.InputJsonObject;
+  // Set to true when the caller has already posted its own interactive message to the
+  // audit channel (e.g. the elevation-granted message with buttons, or the expiry warning
+  // with the Extend Session button). Prevents a redundant plain-text echo alongside it.
+  skipChannelPost?: boolean;
 }
 
 export async function writeAuditLog(client: Client, params: AuditParams): Promise<void> {
@@ -25,9 +29,9 @@ export async function writeAuditLog(client: Client, params: AuditParams): Promis
     },
   });
 
-  // Post to audit channel if configured
+  // Post to audit channel if configured and caller has not already posted an interactive message.
   const config = await db.guildConfig.findUnique({ where: { guildId: params.guildId } });
-  if (config?.auditChannelId) {
+  if (config?.auditChannelId && !params.skipChannelPost) {
     try {
       const channel = await client.channels.fetch(config.auditChannelId) as TextChannel;
       if (channel?.isTextBased()) {
@@ -56,6 +60,11 @@ function eventTypeEmoji(type: AuditEventType): string {
     PASSWORD_CHANGED: "🔄",
     ELIGIBILITY_GRANTED: "✅",
     ELIGIBILITY_REVOKED: "❌",
+    ELEVATION_EXPIRY_WARNING: "⏰",
+    ELEVATION_EXTENDED: "🔁",
+    ELEVATION_ADMIN_REVOKED: "🚫",
+    ELEVATION_ADMIN_REVOKED_BLOCKED: "🔴",
+    ELEVATION_BLOCKED: "⛔",
   };
   return map[type] ?? "📋";
 }
