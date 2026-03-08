@@ -192,7 +192,7 @@ The bot needs the following permissions in Discord:
 
 ## Coding Conventions
 
-- All user-facing replies must use `ephemeral: true`
+- All user-facing replies must use `flags: MessageFlags.Ephemeral` (import `MessageFlags` from `discord.js`). The `ephemeral: true` option is deprecated in discord.js v14+ and must not be used.
 - Always `deferReply` at the start of command handlers
 - Never store raw passwords — always hash before writing to DB
 - Write an `AuditLog` entry for every security-relevant event
@@ -200,3 +200,16 @@ The bot needs the following permissions in Discord:
 - Use `getOrCreateGuildConfig()` whenever you need guild settings — never hardcode defaults inline
 - All admin commands MUST call `isWatchtowerAdmin(member, config)` immediately after `deferReply`. The `member` is `interaction.member as GuildMember`. The `config` comes from `getOrCreateGuildConfig()`. Include `isWatchtowerAdmin: true` in audit log metadata for all admin-originated events.
 - `setDefaultMemberPermissions` on the SlashCommandBuilder is for Discord UI visibility only — it is NOT a security control. Never rely on it as the sole gate.
+
+## Database Migration Conventions
+
+- All column names in migration SQL must be **camelCase** (e.g., `"guildId"`, `"alertChannelId"`, `"adminRoleId"`). The project's init migration established this pattern. Using snake_case causes Prisma P2022 "column not found" errors at runtime.
+- Never write raw snake_case column names in `.sql` migration files.
+
+## Versioning
+
+- **PATCH** (`x.x.N`): bug fixes with no schema or API changes
+- **MINOR** (`x.N.0`): new features, new commands, new DB fields, new config options
+- **MAJOR** (`N.0.0`): breaking changes (schema incompatible with previous version, env var renames, etc.)
+- Tag every release: `git tag vX.Y.Z && git push origin vX.Y.Z`
+- Update `CHANGELOG.md` before tagging
