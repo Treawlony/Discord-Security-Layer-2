@@ -3,6 +3,7 @@ import {
   ChatInputCommandInteraction,
   Client,
   EmbedBuilder,
+  MessageFlags,
 } from "discord.js";
 
 export const data = new SlashCommandBuilder()
@@ -10,7 +11,7 @@ export const data = new SlashCommandBuilder()
   .setDescription("Show all available commands and how Discord Watchtower works.");
 
 export async function execute(interaction: ChatInputCommandInteraction, _client: Client): Promise<void> {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const embed = new EmbedBuilder()
     .setTitle("Discord Watchtower — Help")

@@ -6,6 +6,7 @@ import {
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   ComponentType,
+  MessageFlags,
 } from "discord.js";
 import { db } from "../../lib/database";
 import { verifyPassword } from "../../lib/crypto";
@@ -20,7 +21,7 @@ export const data = new SlashCommandBuilder()
   );
 
 export async function execute(interaction: ChatInputCommandInteraction, client: Client) {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const guildId = interaction.guildId!;
   const discordUserId = interaction.user.id;

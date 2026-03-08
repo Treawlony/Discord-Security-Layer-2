@@ -2,6 +2,7 @@ import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
   Client,
+  MessageFlags,
 } from "discord.js";
 import { db } from "../../lib/database";
 import { hashPassword, PasswordSchema } from "../../lib/crypto";
@@ -15,7 +16,7 @@ export const data = new SlashCommandBuilder()
   );
 
 export async function execute(interaction: ChatInputCommandInteraction, client: Client) {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const password = interaction.options.getString("password", true);
   const guildId = interaction.guildId!;

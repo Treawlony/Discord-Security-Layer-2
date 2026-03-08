@@ -4,6 +4,7 @@ import {
   Client,
   PermissionFlagsBits,
   GuildMember,
+  MessageFlags,
 } from "discord.js";
 import { db } from "../../lib/database";
 import { writeAuditLog } from "../../lib/audit";
@@ -17,7 +18,7 @@ export const data = new SlashCommandBuilder()
   .addUserOption((opt) => opt.setName("user").setDescription("The user to unlock").setRequired(true));
 
 export async function execute(interaction: ChatInputCommandInteraction, client: Client) {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const guildId = interaction.guildId!;
   const config = await getOrCreateGuildConfig(guildId);

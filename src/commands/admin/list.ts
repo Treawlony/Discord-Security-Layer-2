@@ -5,6 +5,7 @@ import {
   PermissionFlagsBits,
   EmbedBuilder,
   GuildMember,
+  MessageFlags,
 } from "discord.js";
 import { db } from "../../lib/database";
 import { getOrCreateGuildConfig } from "../../lib/guildConfig";
@@ -17,7 +18,7 @@ export const data = new SlashCommandBuilder()
   .addUserOption((opt) => opt.setName("user").setDescription("Filter by user (leave blank for all)"));
 
 export async function execute(interaction: ChatInputCommandInteraction, _client: Client) {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const guildId = interaction.guildId!;
   const config = await getOrCreateGuildConfig(guildId);
