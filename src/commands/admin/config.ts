@@ -2,7 +2,6 @@ import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
   Client,
-  PermissionFlagsBits,
   EmbedBuilder,
   GuildMember,
   MessageFlags,
@@ -15,7 +14,7 @@ import { isWatchtowerAdmin } from "../../lib/permissions";
 export const data = new SlashCommandBuilder()
   .setName("watchtower-config")
   .setDescription("View or update Discord Watchtower configuration for this server.")
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+  .setDefaultMemberPermissions(0n)
   .addIntegerOption((opt) =>
     opt
       .setName("session-duration")

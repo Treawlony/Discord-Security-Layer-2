@@ -41,7 +41,7 @@ export async function execute(interaction: ChatInputCommandInteraction, _client:
       {
         name: "Admin Commands",
         value:
-          "*Require Manage Roles or Administrator permission.*\n\n" +
+          "*Require the Watchtower Admin role (or Discord Administrator in bootstrap mode).*\n\n" +
           "`/watchtower-assign` — Grant role eligibility to a user.\n" +
           "`/watchtower-revoke` — Remove a user's eligibility and end any active elevation session.\n" +
           "`/watchtower-list` — View all PIM role assignments in this server.\n" +

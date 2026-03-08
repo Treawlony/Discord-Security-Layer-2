@@ -2,7 +2,6 @@ import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
   Client,
-  PermissionFlagsBits,
   GuildMember,
   MessageFlags,
 } from "discord.js";
@@ -14,7 +13,7 @@ import { isWatchtowerAdmin } from "../../lib/permissions";
 export const data = new SlashCommandBuilder()
   .setName("watchtower-unlock")
   .setDescription("Unlock a PIM account that was locked due to failed attempts.")
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+  .setDefaultMemberPermissions(0n)
   .addUserOption((opt) => opt.setName("user").setDescription("The user to unlock").setRequired(true));
 
 export async function execute(interaction: ChatInputCommandInteraction, client: Client) {
