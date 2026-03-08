@@ -169,6 +169,16 @@ Required Discord permissions: **Manage Roles** (add/remove elevated roles), **Se
 3. Restart the bot — commands are registered globally with Discord automatically in the `ready` event; no manual deploy step is needed. Global propagation takes up to 1 hour.
 4. **Update `src/commands/user/help.ts`** — the help embed is static and must be manually updated to include the new command name and description in the appropriate section (Admin Commands or User Commands).
 
+## Multi-Guild Requirements
+
+The bot is designed to run in multiple Discord servers simultaneously. Every feature must maintain full guild isolation:
+
+- **All DB queries must be scoped by `guildId`** — never fetch records across guilds. Use `interaction.guildId` as the scope for slash commands; use the explicit `guildId` parameter for background jobs.
+- **Button handlers must validate `interaction.guildId === elevation.guildId`** (or equivalent record field) before processing. Without this check, a crafted interaction from Guild B could act on Guild A's data.
+- **Background jobs (cron)** have no guild context — they must iterate all guilds and process each independently, never mixing data from different guilds.
+- **New DB models** must include a `guildId` field and be queried with it. New unique constraints must include `guildId` where applicable (e.g. `@@unique([discordUserId, guildId])`).
+- **No hardcoded guild IDs** anywhere in the codebase.
+
 ## Coding Conventions
 
 - All user-facing replies must use `flags: MessageFlags.Ephemeral` (import `MessageFlags` from `discord.js`). The `ephemeral: true` option is deprecated in discord.js v14+ and must not be used.
