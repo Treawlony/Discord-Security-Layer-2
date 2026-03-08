@@ -13,7 +13,6 @@ import { isWatchtowerAdmin } from "../../lib/permissions";
 export const data = new SlashCommandBuilder()
   .setName("watchtower-assign")
   .setDescription("Assign role eligibility to a user.")
-  .setDefaultMemberPermissions(0n)
   .addUserOption((opt) => opt.setName("user").setDescription("The user").setRequired(true))
   .addRoleOption((opt) => opt.setName("role").setDescription("The role to make eligible").setRequired(true));
 

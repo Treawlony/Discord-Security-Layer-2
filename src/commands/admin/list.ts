@@ -13,7 +13,6 @@ import { isWatchtowerAdmin } from "../../lib/permissions";
 export const data = new SlashCommandBuilder()
   .setName("watchtower-list")
   .setDescription("List all PIM eligible role assignments for a user (or all users).")
-  .setDefaultMemberPermissions(0n)
   .addUserOption((opt) => opt.setName("user").setDescription("Filter by user (leave blank for all)"));
 
 export async function execute(interaction: ChatInputCommandInteraction, _client: Client) {

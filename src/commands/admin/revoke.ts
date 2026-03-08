@@ -13,7 +13,6 @@ import { isWatchtowerAdmin } from "../../lib/permissions";
 export const data = new SlashCommandBuilder()
   .setName("watchtower-revoke")
   .setDescription("Revoke role eligibility from a user.")
-  .setDefaultMemberPermissions(0n)
   .addUserOption((opt) => opt.setName("user").setDescription("The user").setRequired(true))
   .addRoleOption((opt) => opt.setName("role").setDescription("The role to revoke").setRequired(true));
 
