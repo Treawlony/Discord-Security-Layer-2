@@ -38,10 +38,10 @@ export const data = new SlashCommandBuilder()
       .setDescription("Warning time before expiry (e.g. 5m, 1h). Use 0 to disable")
   )
   .addChannelOption((opt) =>
-    opt.setName("alert-channel").setDescription("Channel to post elevation alerts")
+    opt.setName("alert-channel").setDescription("User-facing channel: elevation granted pings and expiry warnings with Extend Session button")
   )
   .addChannelOption((opt) =>
-    opt.setName("audit-channel").setDescription("Channel to post audit log entries and interactive alerts")
+    opt.setName("audit-channel").setDescription("Admin-facing channel: full audit log and elevation controls (Remove Permission buttons)")
   )
   .addRoleOption((opt) =>
     opt

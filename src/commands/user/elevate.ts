@@ -180,8 +180,8 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     const freshConfig = await getOrCreateGuildConfig(guildId);
     const expiryUnix = Math.floor(expiresAt.getTime() / 1000);
 
+    // Audit channel — admin-facing log with Remove Permission / Remove Permission and Block buttons.
     if (freshConfig.auditChannelId) {
-      // Post to audit channel with admin action buttons
       try {
         const auditChannel = await client.channels.fetch(freshConfig.auditChannelId) as TextChannel;
         if (auditChannel?.isTextBased()) {
@@ -207,21 +207,21 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
           });
         }
       } catch (err) {
-        // Non-fatal — elevation is already granted; channel post is best-effort
         console.error("[elevate] Failed to post to audit channel:", err);
       }
-    } else if (freshConfig.alertChannelId) {
-      // Fallback: plain-text alert to alert channel (no buttons — not an audit channel)
+    }
+
+    // Alert channel — user-facing ping, no admin buttons.
+    if (freshConfig.alertChannelId) {
       try {
-        const guild = await client.guilds.fetch(guildId);
-        const alertChannel = guild.channels.cache.get(freshConfig.alertChannelId);
+        const alertChannel = await client.channels.fetch(freshConfig.alertChannelId) as TextChannel;
         if (alertChannel?.isTextBased()) {
-          await (alertChannel as TextChannel).send(
-            `⬆️ **PIM Elevation** — <@${discordUserId}> has been granted **${eligible.roleName}** until <t:${expiryUnix}:R>`
+          await alertChannel.send(
+            `⬆️ <@${discordUserId}>, you have been granted **${eligible.roleName}** until <t:${expiryUnix}:R>.`
           );
         }
-      } catch {
-        // Non-fatal
+      } catch (err) {
+        console.error("[elevate] Failed to post to alert channel:", err);
       }
     }
 

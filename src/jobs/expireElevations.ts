@@ -25,11 +25,14 @@ export function startExpiryJob(client: Client): void {
 // yet been warned (notifiedAt IS NULL).
 // ---------------------------------------------------------------------------
 async function runWarningScan(client: Client): Promise<void> {
-  // Only consider guilds that have notifications enabled and an audit channel.
+  // Consider guilds that have notifications enabled and at least one output channel.
   const configs = await db.guildConfig.findMany({
     where: {
       notifyBeforeSec: { gt: 0 },
-      auditChannelId: { not: null },
+      OR: [
+        { auditChannelId: { not: null } },
+        { alertChannelId: { not: null } },
+      ],
     },
   });
 
@@ -54,28 +57,44 @@ async function runWarningScan(client: Client): Promise<void> {
         data: { notifiedAt: new Date() },
       });
 
-      // Post warning message to audit channel with "Extend Session" button.
-      try {
-        const channel = await client.channels.fetch(config.auditChannelId!) as TextChannel;
-        if (channel?.isTextBased()) {
-          const extendButton = new ButtonBuilder()
-            .setCustomId(`extend_session:${elevation.id}`)
-            .setLabel("Extend Session")
-            .setStyle(ButtonStyle.Primary);
+      const expiryUnix = Math.floor(elevation.expiresAt.getTime() / 1000);
 
-          const row = new ActionRowBuilder<ButtonBuilder>().addComponents(extendButton);
+      // Alert channel — user-facing ping with Extend Session button.
+      if (config.alertChannelId) {
+        try {
+          const alertChannel = await client.channels.fetch(config.alertChannelId) as TextChannel;
+          if (alertChannel?.isTextBased()) {
+            const extendButton = new ButtonBuilder()
+              .setCustomId(`extend_session:${elevation.id}`)
+              .setLabel("Extend Session")
+              .setStyle(ButtonStyle.Primary);
 
-          await channel.send({
-            content:
-              `⏰ <@${elevation.pimUser.discordUserId}>, your **${elevation.roleName}** elevation expires ` +
-              `<t:${Math.floor(elevation.expiresAt.getTime() / 1000)}:R>. ` +
-              `Click **Extend Session** to reset your timer.`,
-            components: [row],
-          });
+            const row = new ActionRowBuilder<ButtonBuilder>().addComponents(extendButton);
+
+            await alertChannel.send({
+              content:
+                `⏰ <@${elevation.pimUser.discordUserId}>, your **${elevation.roleName}** elevation expires ` +
+                `<t:${expiryUnix}:R>. Click **Extend Session** to reset your timer.`,
+              components: [row],
+            });
+          }
+        } catch (err) {
+          console.error(`[Jobs] Warning scan: failed to post to alert channel for guild ${config.guildId}`, err);
         }
-      } catch (err) {
-        // Non-fatal — notifiedAt already set, audit log still written below
-        console.error(`[Jobs] Warning scan: failed to post to audit channel for guild ${config.guildId}`, err);
+      }
+
+      // Audit channel — admin-facing plain text notification (no Extend Session button).
+      if (config.auditChannelId) {
+        try {
+          const auditChannel = await client.channels.fetch(config.auditChannelId) as TextChannel;
+          if (auditChannel?.isTextBased()) {
+            await auditChannel.send(
+              `⏰ **Expiry Warning** — <@${elevation.pimUser.discordUserId}>'s **${elevation.roleName}** elevation expires <t:${expiryUnix}:R>.`
+            );
+          }
+        } catch (err) {
+          console.error(`[Jobs] Warning scan: failed to post to audit channel for guild ${config.guildId}`, err);
+        }
       }
 
       // skipChannelPost: the interactive warning message with the Extend Session button
