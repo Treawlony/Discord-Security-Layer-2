@@ -202,6 +202,13 @@ The bot is designed to run in multiple Discord servers simultaneously. Every fea
 - After performing the action, update the original message's components to disabled buttons (wrapped in try/catch — non-fatal if the message was deleted).
 - Button routing in `interactionCreate.ts` uses `customId.startsWith("<prefix>")`. When two prefixes share a common start (e.g. `remove_perm:` and `remove_perm_block:`), the **longer/more-specific prefix must be checked first**.
 
+### Alert channel vs Audit channel
+
+- `alertChannelId` is **user-facing**: receives the elevation-granted ping and the expiry warning with the **Extend Session** button. Do not post admin-only content here.
+- `auditChannelId` is **admin-facing**: receives the elevation-granted message with **Remove Permission** / **Remove Permission and Block** buttons, plain-text expiry warnings, and all other audit log events.
+- Both channels post independently — if both are configured, each receives its respective content. If only one is configured, that channel receives both sets of posts.
+- Any future feature that posts to a channel must follow this split.
+
 ### `writeAuditLog` — `skipChannelPost`
 
 - `writeAuditLog` always posts a plain-text echo to the audit channel by default.
