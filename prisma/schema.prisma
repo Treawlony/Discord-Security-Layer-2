@@ -23,6 +23,8 @@ model GuildConfig {
   alertChannelId     String?
   // Discord channel ID where audit logs are posted
   auditChannelId     String?
+  // Discord role ID for the Watchtower Admin role; null = not configured (bootstrap: Administrator fallback)
+  adminRoleId        String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -111,4 +113,5 @@ enum AuditEventType {
   ACCOUNT_UNLOCKED
   ELIGIBILITY_GRANTED
   ELIGIBILITY_REVOKED
+  ADMIN_ROLE_CONFIGURED
 }

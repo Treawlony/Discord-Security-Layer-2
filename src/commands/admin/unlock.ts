@@ -3,9 +3,12 @@ import {
   ChatInputCommandInteraction,
   Client,
   PermissionFlagsBits,
+  GuildMember,
 } from "discord.js";
 import { db } from "../../lib/database";
 import { writeAuditLog } from "../../lib/audit";
+import { getOrCreateGuildConfig } from "../../lib/guildConfig";
+import { isWatchtowerAdmin } from "../../lib/permissions";
 
 export const data = new SlashCommandBuilder()
   .setName("watchtower-unlock")
@@ -17,6 +20,15 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
   await interaction.deferReply({ ephemeral: true });
 
   const guildId = interaction.guildId!;
+  const config = await getOrCreateGuildConfig(guildId);
+  const member = interaction.member as GuildMember;
+
+  if (!isWatchtowerAdmin(member, config)) {
+    return interaction.editReply(
+      "You do not have permission to use this command.\n\nA Watchtower Admin role is required. Contact your server owner to be assigned the correct role."
+    );
+  }
+
   const target = interaction.options.getUser("user", true);
 
   const pimUser = await db.pimUser.findUnique({
@@ -41,7 +53,7 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     discordUserId: target.id,
     pimUserId: pimUser.id,
     eventType: "ACCOUNT_UNLOCKED",
-    metadata: { unlockedBy: interaction.user.id },
+    metadata: { unlockedBy: interaction.user.id, isWatchtowerAdmin: true },
   });
 
   return interaction.editReply(`<@${target.id}>'s PIM account has been unlocked.`);

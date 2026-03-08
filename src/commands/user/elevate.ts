@@ -87,8 +87,13 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
   // Reset failed attempts on success
   await db.pimUser.update({ where: { id: pimUser.id }, data: { failedAttempts: 0 } });
 
-  if (pimUser.eligibleRoles.length === 0) {
-    return interaction.editReply("You have no eligible roles assigned. Contact an administrator.");
+  // Filter out the Watchtower Admin role so users cannot elevate to bot management permissions.
+  const availableRoles = config.adminRoleId
+    ? pimUser.eligibleRoles.filter((r) => r.roleId !== config.adminRoleId)
+    : pimUser.eligibleRoles;
+
+  if (availableRoles.length === 0) {
+    return interaction.editReply("You have no eligible roles available. Contact an administrator.");
   }
 
   await writeAuditLog(client, {
@@ -98,8 +103,8 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     eventType: "ELEVATION_REQUESTED",
   });
 
-  // Build role select menu
-  const options = pimUser.eligibleRoles.map((r) =>
+  // Build role select menu from the filtered list
+  const options = availableRoles.map((r) =>
     new StringSelectMenuOptionBuilder().setLabel(r.roleName).setValue(r.roleId)
   );
 
@@ -127,7 +132,7 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     await selectInteraction.deferUpdate();
 
     const roleId = selectInteraction.values[0];
-    const eligible = pimUser.eligibleRoles.find((r) => r.roleId === roleId);
+    const eligible = availableRoles.find((r) => r.roleId === roleId);
     if (!eligible) return;
 
     const expiresAt = new Date(Date.now() + config.sessionDurationMin * 60 * 1000);

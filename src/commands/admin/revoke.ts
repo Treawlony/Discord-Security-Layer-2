@@ -3,9 +3,12 @@ import {
   ChatInputCommandInteraction,
   Client,
   PermissionFlagsBits,
+  GuildMember,
 } from "discord.js";
 import { db } from "../../lib/database";
 import { writeAuditLog } from "../../lib/audit";
+import { getOrCreateGuildConfig } from "../../lib/guildConfig";
+import { isWatchtowerAdmin } from "../../lib/permissions";
 
 export const data = new SlashCommandBuilder()
   .setName("watchtower-revoke")
@@ -18,6 +21,15 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
   await interaction.deferReply({ ephemeral: true });
 
   const guildId = interaction.guildId!;
+  const config = await getOrCreateGuildConfig(guildId);
+  const member = interaction.member as GuildMember;
+
+  if (!isWatchtowerAdmin(member, config)) {
+    return interaction.editReply(
+      "You do not have permission to use this command.\n\nA Watchtower Admin role is required. Contact your server owner to be assigned the correct role."
+    );
+  }
+
   const target = interaction.options.getUser("user", true);
   const role = interaction.options.getRole("role", true);
 
@@ -45,8 +57,8 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
   if (activeElevation) {
     try {
       const guild = await client.guilds.fetch(guildId);
-      const member = await guild.members.fetch(target.id);
-      await member.roles.remove(role.id, `PIM eligibility revoked by ${interaction.user.tag}`);
+      const targetMember = await guild.members.fetch(target.id);
+      await targetMember.roles.remove(role.id, `PIM eligibility revoked by ${interaction.user.tag}`);
     } catch {
       // Member may have left
     }
@@ -58,6 +70,7 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
       eventType: "ELEVATION_REVOKED",
       roleId: role.id,
       roleName: role.name,
+      metadata: { revokedBy: interaction.user.id, isWatchtowerAdmin: true },
     });
   }
 
@@ -68,7 +81,7 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     eventType: "ELIGIBILITY_REVOKED",
     roleId: role.id,
     roleName: role.name,
-    metadata: { revokedBy: interaction.user.id },
+    metadata: { revokedBy: interaction.user.id, isWatchtowerAdmin: true },
   });
 
   return interaction.editReply(`<@${target.id}> can no longer elevate to **${role.name}**.`);

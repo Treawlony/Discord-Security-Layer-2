@@ -4,8 +4,11 @@ import {
   Client,
   PermissionFlagsBits,
   EmbedBuilder,
+  GuildMember,
 } from "discord.js";
 import { db } from "../../lib/database";
+import { getOrCreateGuildConfig } from "../../lib/guildConfig";
+import { isWatchtowerAdmin } from "../../lib/permissions";
 
 export const data = new SlashCommandBuilder()
   .setName("watchtower-list")
@@ -17,6 +20,15 @@ export async function execute(interaction: ChatInputCommandInteraction, _client:
   await interaction.deferReply({ ephemeral: true });
 
   const guildId = interaction.guildId!;
+  const config = await getOrCreateGuildConfig(guildId);
+  const member = interaction.member as GuildMember;
+
+  if (!isWatchtowerAdmin(member, config)) {
+    return interaction.editReply(
+      "You do not have permission to use this command.\n\nA Watchtower Admin role is required. Contact your server owner to be assigned the correct role."
+    );
+  }
+
   const targetUser = interaction.options.getUser("user");
 
   const where = targetUser

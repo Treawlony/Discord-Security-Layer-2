@@ -23,12 +23,12 @@ Discord Watchtower is a **Privileged Identity Manager (PIM)** Discord bot. Rathe
 ```
 src/
   commands/
-    admin/          # Admin-only slash commands (require ManageRoles or Administrator)
+    admin/          # Admin-only slash commands (runtime-gated by isWatchtowerAdmin())
       assign.ts     # /watchtower-assign  — grant role eligibility to a user
       revoke.ts     # /watchtower-revoke  — remove eligibility (and active elevation)
       list.ts       # /watchtower-list    — view all assignments
       unlock.ts     # /watchtower-unlock  — unlock a locked-out PIM account
-      config.ts     # /watchtower-config  — view/update guild settings
+      config.ts     # /watchtower-config  — view/update guild settings (incl. admin role)
     user/           # User-facing slash commands
       set-password.ts  # /set-password   — register or change PIM password
       elevate.ts       # /elevate        — authenticate + select role to elevate
@@ -40,6 +40,7 @@ src/
     crypto.ts      # bcrypt helpers + Zod password schema
     audit.ts       # Write audit log to DB and Discord channel
     guildConfig.ts # Upsert guild config with defaults
+    permissions.ts # isWatchtowerAdmin() — runtime admin permission check
     commandLoader.ts  # Auto-discovers and loads all commands
     eventLoader.ts    # Registers Discord event handlers
   jobs/
@@ -65,6 +66,7 @@ prisma/
 - **Lockout**: configurable N failed attempts → `lockedAt` set → admin must run `/watchtower-unlock`
 - **Ephemeral replies**: all sensitive interactions use `ephemeral: true`
 - **Audit log**: every event written to `audit_logs` table + optionally posted to a Discord channel
+- **Watchtower Admin role**: bot management is gated by `isWatchtowerAdmin()` at runtime in every admin command. `setDefaultMemberPermissions` on the SlashCommandBuilder is UI-only and is NOT the security gate. See `src/lib/permissions.ts`.
 
 ### Guild Configuration (per-server)
 Stored in `GuildConfig`. Defaults come from `.env`:
@@ -72,6 +74,13 @@ Stored in `GuildConfig`. Defaults come from `.env`:
 - `lockoutThreshold` (default: 5) — failed attempts before lockout
 - `alertChannelId` — channel for elevation alerts
 - `auditChannelId` — channel for audit log messages
+- `adminRoleId` (default: null) — Discord role ID of the Watchtower Admin role. When null, bot management falls back to Discord `Administrator` permission (bootstrap mode). Once set, this role is the **sole** gate — `Administrator` alone is denied.
+
+### Watchtower Admin Role — Bootstrap Behaviour
+- **Not configured** (`adminRoleId = null`): any user with Discord `Administrator` can run admin commands.
+- **Configured** (`adminRoleId` set): only users holding that Discord role can run admin commands. `Administrator` is no longer sufficient.
+- Set the admin role via `/watchtower-config admin-role:@role`.
+- **Recovery if locked out**: if the admin role is deleted from Discord, you must edit the `guild_configs` table directly (`UPDATE guild_configs SET admin_role_id = NULL WHERE guild_id = '...'`) to re-enter bootstrap mode.
 
 ## Database Schema Summary
 
@@ -189,3 +198,5 @@ The bot needs the following permissions in Discord:
 - Write an `AuditLog` entry for every security-relevant event
 - Non-fatal errors (e.g. posting to a Discord channel) should be caught and logged, not thrown
 - Use `getOrCreateGuildConfig()` whenever you need guild settings — never hardcode defaults inline
+- All admin commands MUST call `isWatchtowerAdmin(member, config)` immediately after `deferReply`. The `member` is `interaction.member as GuildMember`. The `config` comes from `getOrCreateGuildConfig()`. Include `isWatchtowerAdmin: true` in audit log metadata for all admin-originated events.
+- `setDefaultMemberPermissions` on the SlashCommandBuilder is for Discord UI visibility only — it is NOT a security control. Never rely on it as the sole gate.
