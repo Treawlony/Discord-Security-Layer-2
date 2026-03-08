@@ -39,6 +39,13 @@ export async function handleExtendSession(
     return;
   }
 
+  if (interaction.guildId !== elevation.guildId) {
+    await interaction.editReply({
+      content: "This action cannot be performed in this server.",
+    });
+    return;
+  }
+
   // Only the user whose session this is may extend it.
   if (interaction.user.id !== elevation.pimUser.discordUserId) {
     await interaction.editReply({
@@ -107,6 +114,13 @@ export async function handleRemovePerm(
   if (!elevation) {
     await interaction.editReply({
       content: "This elevation has already expired or been revoked.",
+    });
+    return;
+  }
+
+  if (interaction.guildId !== elevation.guildId) {
+    await interaction.editReply({
+      content: "This action cannot be performed in this server.",
     });
     return;
   }
@@ -180,6 +194,13 @@ export async function handleRemovePermBlock(
   if (!elevation) {
     await interaction.editReply({
       content: "This elevation has already expired or been revoked.",
+    });
+    return;
+  }
+
+  if (interaction.guildId !== elevation.guildId) {
+    await interaction.editReply({
+      content: "This action cannot be performed in this server.",
     });
     return;
   }
