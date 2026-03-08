@@ -46,7 +46,7 @@ export async function execute(interaction: ChatInputCommandInteraction, _client:
           "`/watchtower-revoke` — Remove a user's eligibility and end any active elevation session.\n" +
           "`/watchtower-list` — View all PIM role assignments in this server.\n" +
           "`/watchtower-unlock` — Clear an account lockout or admin block on a PIM account.\n" +
-          "`/watchtower-config` — View or update session duration, expiry warning timing, lockout threshold, and logging channels.",
+          "`/watchtower-config` — View or update session duration (e.g. `2h`, `30m`), expiry warning timing, lockout threshold, and logging channels.",
       }
     )
     .setFooter({ text: "Only you can see this message." })

@@ -146,7 +146,7 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     const eligible = availableRoles.find((r) => r.roleId === roleId);
     if (!eligible) return;
 
-    const expiresAt = new Date(Date.now() + config.sessionDurationMin * 60 * 1000);
+    const expiresAt = new Date(Date.now() + config.sessionDurationSec * 1000);
 
     try {
       const guild = await client.guilds.fetch(guildId);

@@ -28,14 +28,14 @@ async function runWarningScan(client: Client): Promise<void> {
   // Only consider guilds that have notifications enabled and an audit channel.
   const configs = await db.guildConfig.findMany({
     where: {
-      notifyBeforeMin: { gt: 0 },
+      notifyBeforeSec: { gt: 0 },
       auditChannelId: { not: null },
     },
   });
 
   for (const config of configs) {
     const now = new Date();
-    const windowEnd = new Date(now.getTime() + config.notifyBeforeMin * 60 * 1000);
+    const windowEnd = new Date(now.getTime() + config.notifyBeforeSec * 1000);
 
     const toWarn = await db.activeElevation.findMany({
       where: {
@@ -89,7 +89,7 @@ async function runWarningScan(client: Client): Promise<void> {
         roleName: elevation.roleName,
         metadata: {
           expiresAt: elevation.expiresAt.toISOString(),
-          notifyBeforeMin: config.notifyBeforeMin,
+          notifyBeforeSec: config.notifyBeforeSec,
         },
         skipChannelPost: true,
       });

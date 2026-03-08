@@ -10,16 +10,20 @@ import { db } from "../../lib/database";
 import { writeAuditLog } from "../../lib/audit";
 import { getOrCreateGuildConfig } from "../../lib/guildConfig";
 import { isWatchtowerAdmin } from "../../lib/permissions";
+import { parseDuration, formatDuration } from "../../lib/duration";
+
+// Validation constants for duration options (all in seconds)
+const SESSION_DURATION_MIN_SEC = 60;      // 1 minute minimum
+const SESSION_DURATION_MAX_SEC = 86400;   // 1 day maximum
+const NOTIFY_BEFORE_MIN_NONZERO_SEC = 10; // 10 seconds minimum when non-zero
 
 export const data = new SlashCommandBuilder()
   .setName("watchtower-config")
   .setDescription("View or update Discord Watchtower configuration for this server.")
-  .addIntegerOption((opt) =>
+  .addStringOption((opt) =>
     opt
       .setName("session-duration")
-      .setDescription("Session duration in minutes before elevated role is auto-removed")
-      .setMinValue(1)
-      .setMaxValue(1440)
+      .setDescription("Duration before elevated role is removed (e.g. 30m, 2h, 1d)")
   )
   .addIntegerOption((opt) =>
     opt
@@ -28,12 +32,10 @@ export const data = new SlashCommandBuilder()
       .setMinValue(1)
       .setMaxValue(20)
   )
-  .addIntegerOption((opt) =>
+  .addStringOption((opt) =>
     opt
       .setName("notify-before")
-      .setDescription("Minutes before expiry to warn the user in the audit channel (0 to disable)")
-      .setMinValue(0)
-      .setMaxValue(60)
+      .setDescription("Warning time before expiry (e.g. 5m, 1h). Use 0 to disable")
   )
   .addChannelOption((opt) =>
     opt.setName("alert-channel").setDescription("Channel to post elevation alerts")
@@ -60,9 +62,9 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     );
   }
 
-  const sessionDuration = interaction.options.getInteger("session-duration");
+  const sessionDurationRaw = interaction.options.getString("session-duration");
   const lockoutThreshold = interaction.options.getInteger("lockout-threshold");
-  const notifyBefore = interaction.options.getInteger("notify-before");
+  const notifyBeforeRaw = interaction.options.getString("notify-before");
   const alertChannel = interaction.options.getChannel("alert-channel");
   const auditChannel = interaction.options.getChannel("audit-channel");
   const adminRole = interaction.options.getRole("admin-role");
@@ -73,14 +75,58 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     );
   }
 
+  // Parse and validate session-duration if provided
+  let sessionDurationSec: number | undefined;
+  if (sessionDurationRaw !== null) {
+    const parsed = parseDuration(sessionDurationRaw);
+    if (parsed === null) {
+      return interaction.editReply(
+        `Invalid session duration \`${sessionDurationRaw}\`. Use a number with a unit suffix, e.g. \`30m\`, \`2h\`, \`1d\`.`
+      );
+    }
+    if (parsed < SESSION_DURATION_MIN_SEC || parsed > SESSION_DURATION_MAX_SEC) {
+      return interaction.editReply(
+        `Session duration must be between **1m** (60s) and **1d** (86400s). Got: \`${sessionDurationRaw}\`.`
+      );
+    }
+    sessionDurationSec = parsed;
+  }
+
+  // Parse and validate notify-before if provided
+  let notifyBeforeSec: number | undefined;
+  if (notifyBeforeRaw !== null) {
+    const parsed = parseDuration(notifyBeforeRaw);
+    if (parsed === null) {
+      return interaction.editReply(
+        `Invalid notify-before value \`${notifyBeforeRaw}\`. Use a number with a unit suffix (e.g. \`5m\`, \`1h\`) or \`0\` to disable.`
+      );
+    }
+    if (parsed !== 0 && parsed < NOTIFY_BEFORE_MIN_NONZERO_SEC) {
+      return interaction.editReply(
+        `Notify-before must be at least **10s** when non-zero, or \`0\` to disable. Got: \`${notifyBeforeRaw}\`.`
+      );
+    }
+
+    // Validate against the effective session duration (either newly set or current)
+    const effectiveSessionSec = sessionDurationSec ?? current.sessionDurationSec;
+    if (parsed !== 0 && parsed >= effectiveSessionSec) {
+      return interaction.editReply(
+        `Notify-before (\`${notifyBeforeRaw}\`) must be less than the session duration (${formatDuration(effectiveSessionSec)}). ` +
+        `Reduce notify-before or increase session-duration.`
+      );
+    }
+
+    notifyBeforeSec = parsed;
+  }
+
   const adminRoleChanged = adminRole !== null;
 
   const updated = await db.guildConfig.update({
     where: { guildId },
     data: {
-      sessionDurationMin: sessionDuration ?? current.sessionDurationMin,
+      sessionDurationSec: sessionDurationSec ?? current.sessionDurationSec,
       lockoutThreshold: lockoutThreshold ?? current.lockoutThreshold,
-      notifyBeforeMin: notifyBefore ?? current.notifyBeforeMin,
+      notifyBeforeSec: notifyBeforeSec ?? current.notifyBeforeSec,
       alertChannelId: alertChannel ? alertChannel.id : current.alertChannelId,
       auditChannelId: auditChannel ? auditChannel.id : current.auditChannelId,
       adminRoleId: adminRoleChanged ? adminRole!.id : current.adminRoleId,
@@ -108,15 +154,15 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     ? `<@&${updated.adminRoleId}>`
     : "Not set — using Discord Administrator";
 
-  const expiryWarningDisplay = updated.notifyBeforeMin === 0
+  const expiryWarningDisplay = updated.notifyBeforeSec === 0
     ? "Disabled"
-    : `${updated.notifyBeforeMin} min before expiry`;
+    : `${formatDuration(updated.notifyBeforeSec)} before expiry`;
 
   const embed = new EmbedBuilder()
     .setTitle("Watchtower Configuration")
     .setColor(0x57f287)
     .addFields(
-      { name: "Session Duration", value: `${updated.sessionDurationMin} minutes`, inline: true },
+      { name: "Session Duration", value: formatDuration(updated.sessionDurationSec), inline: true },
       { name: "Expiry Warning", value: expiryWarningDisplay, inline: true },
       { name: "Lockout Threshold", value: `${updated.lockoutThreshold} attempts`, inline: true },
       { name: "Alert Channel", value: updated.alertChannelId ? `<#${updated.alertChannelId}>` : "Not set", inline: true },
@@ -125,18 +171,9 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     )
     .setTimestamp();
 
-  // Caution note if notify-before exceeds session duration
-  const cautionNote =
-    notifyBefore !== null && notifyBefore > updated.sessionDurationMin
-      ? `Note: notify-before (${notifyBefore} min) exceeds session-duration (${updated.sessionDurationMin} min). The warning will fire on the first cron tick after every new elevation.`
-      : undefined;
-
   const warning = adminRoleChanged
     ? "**Important:** Once the Admin Role is set, only members with that role can manage Watchtower — including running this command. Ensure you hold this role before proceeding."
     : undefined;
 
-  const contentParts = [warning, cautionNote].filter(Boolean);
-  const content = contentParts.length > 0 ? contentParts.join("\n\n") : undefined;
-
-  return interaction.editReply({ embeds: [embed], content });
+  return interaction.editReply({ embeds: [embed], content: warning });
 }

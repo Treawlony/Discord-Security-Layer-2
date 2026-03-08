@@ -15,8 +15,8 @@ datasource db {
 model GuildConfig {
   id                 String   @id @default(cuid())
   guildId            String   @unique
-  // How long (in minutes) an elevated role session lasts
-  sessionDurationMin Int      @default(60)
+  // How long (in seconds) an elevated role session lasts
+  sessionDurationSec Int      @default(3600)
   // How many failed password attempts before lockout
   lockoutThreshold   Int      @default(5)
   // Discord channel ID where elevation alerts are posted
@@ -25,8 +25,8 @@ model GuildConfig {
   auditChannelId     String?
   // Discord role ID for the Watchtower Admin role; null = not configured (bootstrap: Administrator fallback)
   adminRoleId        String?
-  // Minutes before expiry to post a warning message; 0 = disabled
-  notifyBeforeMin    Int      @default(5)
+  // Seconds before expiry to post a warning message; 0 = disabled
+  notifyBeforeSec    Int      @default(300)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

@@ -55,7 +55,7 @@ export async function handleExtendSession(
   }
 
   const config = await getOrCreateGuildConfig(elevation.guildId);
-  const newExpiresAt = new Date(Date.now() + config.sessionDurationMin * 60 * 1000);
+  const newExpiresAt = new Date(Date.now() + config.sessionDurationSec * 1000);
 
   await db.activeElevation.update({
     where: { id: elevationId },

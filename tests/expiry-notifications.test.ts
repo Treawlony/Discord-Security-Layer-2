@@ -17,12 +17,12 @@ function buildConfig(overrides: Partial<GuildConfig> = {}): GuildConfig {
   return {
     id: "cfg1",
     guildId: "guild1",
-    sessionDurationMin: 60,
+    sessionDurationSec: 3600,
     lockoutThreshold: 5,
     alertChannelId: null,
     auditChannelId: "audit-channel-id",
     adminRoleId: ADMIN_ROLE_ID,
-    notifyBeforeMin: 5,
+    notifyBeforeSec: 300,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -51,25 +51,25 @@ function buildMember(opts: {
 // Section 1: Schema — new fields present in GuildConfig type
 // ---------------------------------------------------------------------------
 
-describe("GuildConfig schema — notifyBeforeMin field", () => {
-  it("config object includes notifyBeforeMin field", () => {
+describe("GuildConfig schema — notifyBeforeSec field", () => {
+  it("config object includes notifyBeforeSec field", () => {
     const config = buildConfig();
-    expect(config).toHaveProperty("notifyBeforeMin");
+    expect(config).toHaveProperty("notifyBeforeSec");
   });
 
-  it("default notifyBeforeMin is 5", () => {
+  it("default notifyBeforeSec is 300 (5 minutes)", () => {
     const config = buildConfig();
-    expect(config.notifyBeforeMin).toBe(5);
+    expect(config.notifyBeforeSec).toBe(300);
   });
 
-  it("notifyBeforeMin can be set to 0 (disabled)", () => {
-    const config = buildConfig({ notifyBeforeMin: 0 });
-    expect(config.notifyBeforeMin).toBe(0);
+  it("notifyBeforeSec can be set to 0 (disabled)", () => {
+    const config = buildConfig({ notifyBeforeSec: 0 });
+    expect(config.notifyBeforeSec).toBe(0);
   });
 
-  it("notifyBeforeMin can be set to 60 (max)", () => {
-    const config = buildConfig({ notifyBeforeMin: 60 });
-    expect(config.notifyBeforeMin).toBe(60);
+  it("notifyBeforeSec can be set to 3600 (1 hour)", () => {
+    const config = buildConfig({ notifyBeforeSec: 3600 });
+    expect(config.notifyBeforeSec).toBe(3600);
   });
 });
 
@@ -130,6 +130,66 @@ describe("Migration SQL — camelCase column names", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Section 2b: New migration — duration_in_seconds
+// ---------------------------------------------------------------------------
+
+describe("Migration SQL — duration_in_seconds camelCase column names", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const migrationPath = path.resolve(
+    __dirname,
+    "../prisma/migrations/20260308000002_duration_in_seconds/migration.sql"
+  );
+  let sql: string;
+
+  beforeAll(() => {
+    sql = fs.readFileSync(migrationPath, "utf-8");
+  });
+
+  it("migration file exists", () => {
+    expect(fs.existsSync(migrationPath)).toBe(true);
+  });
+
+  it("uses camelCase sessionDurationSec (not snake_case)", () => {
+    expect(sql).toContain('"sessionDurationSec"');
+    expect(sql).not.toContain("session_duration_sec");
+  });
+
+  it("uses camelCase notifyBeforeSec (not snake_case)", () => {
+    expect(sql).toContain('"notifyBeforeSec"');
+    expect(sql).not.toContain("notify_before_sec");
+  });
+
+  it("uses camelCase sessionDurationMin for the old column reference", () => {
+    expect(sql).toContain('"sessionDurationMin"');
+    expect(sql).not.toContain("session_duration_min");
+  });
+
+  it("uses camelCase notifyBeforeMin for the old column reference", () => {
+    expect(sql).toContain('"notifyBeforeMin"');
+    expect(sql).not.toContain("notify_before_min");
+  });
+
+  it("converts minutes to seconds by multiplying by 60", () => {
+    expect(sql).toContain("* 60");
+  });
+
+  it("sets new default of 3600 for sessionDurationSec", () => {
+    expect(sql).toContain("DEFAULT 3600");
+  });
+
+  it("sets new default of 300 for notifyBeforeSec", () => {
+    expect(sql).toContain("DEFAULT 300");
+  });
+
+  it("does not DROP TABLE or TRUNCATE", () => {
+    const upperSql = sql.toUpperCase();
+    expect(upperSql).not.toContain("DROP TABLE");
+    expect(upperSql).not.toContain("TRUNCATE");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Section 3: Prisma schema — new fields present in schema.prisma
 // ---------------------------------------------------------------------------
 
@@ -143,9 +203,9 @@ describe("Prisma schema — new fields", () => {
     schema = fs.readFileSync(schemaPath, "utf-8");
   });
 
-  it("GuildConfig has notifyBeforeMin with default 5", () => {
-    expect(schema).toContain("notifyBeforeMin");
-    expect(schema).toContain("@default(5)");
+  it("GuildConfig has notifyBeforeSec with default 300", () => {
+    expect(schema).toContain("notifyBeforeSec");
+    expect(schema).toContain("@default(300)");
   });
 
   it("ActiveElevation has notifiedAt as nullable", () => {
@@ -425,8 +485,8 @@ describe("expireElevations.ts — warning scan", () => {
     expect(source).toContain("async function runExpiryScan");
   });
 
-  it("warning scan queries notifyBeforeMin > 0", () => {
-    expect(source).toContain("notifyBeforeMin: { gt: 0 }");
+  it("warning scan queries notifyBeforeSec > 0", () => {
+    expect(source).toContain("notifyBeforeSec: { gt: 0 }");
   });
 
   it("warning scan filters notifiedAt: null", () => {
@@ -574,28 +634,26 @@ describe("config.ts — notify-before option", () => {
     expect(source).toContain('"notify-before"');
   });
 
-  it("notify-before has min value 0", () => {
-    expect(source).toContain("setMinValue(0)");
+  it("notify-before uses addStringOption (accepts human-readable durations)", () => {
+    // The option is now a string option so users can enter e.g. "5m", "1h"
+    expect(source).toContain("addStringOption");
   });
 
-  it("notify-before has max value 60", () => {
-    expect(source).toContain("setMaxValue(60)");
-  });
-
-  it("persists notifyBeforeMin in the config update", () => {
-    expect(source).toContain("notifyBeforeMin:");
+  it("persists notifyBeforeSec in the config update", () => {
+    expect(source).toContain("notifyBeforeSec:");
   });
 
   it("shows Expiry Warning field in the embed", () => {
     expect(source).toContain("Expiry Warning");
   });
 
-  it("shows 'Disabled' when notifyBeforeMin is 0", () => {
+  it("shows 'Disabled' when notifyBeforeSec is 0", () => {
     expect(source).toContain("Disabled");
   });
 
-  it("includes caution note when notify-before exceeds session-duration", () => {
-    expect(source).toContain("exceeds session-duration");
+  it("rejects notify-before that equals or exceeds session-duration with an error", () => {
+    // Now validated and rejected rather than allowed with a caution note
+    expect(source).toContain("must be less than the session duration");
   });
 
   it("calls isWatchtowerAdmin before making any changes", () => {
@@ -618,59 +676,60 @@ describe("config.ts — notify-before option", () => {
 describe("Warning scan eligibility logic", () => {
   /**
    * The warning scan uses this condition:
-   *   expiresAt <= now + notifyBeforeMin*60*1000
+   *   expiresAt <= now + notifyBeforeSec*1000
    *   AND expiresAt > now
    *   AND notifiedAt === null
-   *   AND notifyBeforeMin > 0
+   *   AND notifyBeforeSec > 0
    *
    * We test this logic directly as pure functions.
+   * notifyBeforeSec is now stored and compared in seconds (not minutes).
    */
 
   function isInWarningWindow(
     expiresAt: Date,
     now: Date,
-    notifyBeforeMin: number
+    notifyBeforeSec: number
   ): boolean {
-    if (notifyBeforeMin <= 0) return false;
-    const windowEnd = new Date(now.getTime() + notifyBeforeMin * 60 * 1000);
+    if (notifyBeforeSec <= 0) return false;
+    const windowEnd = new Date(now.getTime() + notifyBeforeSec * 1000);
     return expiresAt <= windowEnd && expiresAt > now;
   }
 
   const NOW = new Date("2026-03-08T12:00:00Z");
 
   it("returns true when elevation expires exactly at window end", () => {
-    const expiresAt = new Date(NOW.getTime() + 5 * 60 * 1000); // exactly 5 min from now
-    expect(isInWarningWindow(expiresAt, NOW, 5)).toBe(true);
+    const expiresAt = new Date(NOW.getTime() + 300 * 1000); // exactly 300s (5 min) from now
+    expect(isInWarningWindow(expiresAt, NOW, 300)).toBe(true);
   });
 
   it("returns true when elevation expires within the window", () => {
-    const expiresAt = new Date(NOW.getTime() + 3 * 60 * 1000); // 3 min from now
-    expect(isInWarningWindow(expiresAt, NOW, 5)).toBe(true);
+    const expiresAt = new Date(NOW.getTime() + 180 * 1000); // 180s (3 min) from now
+    expect(isInWarningWindow(expiresAt, NOW, 300)).toBe(true);
   });
 
   it("returns false when elevation expires outside the window", () => {
-    const expiresAt = new Date(NOW.getTime() + 10 * 60 * 1000); // 10 min from now
-    expect(isInWarningWindow(expiresAt, NOW, 5)).toBe(false);
+    const expiresAt = new Date(NOW.getTime() + 600 * 1000); // 600s (10 min) from now
+    expect(isInWarningWindow(expiresAt, NOW, 300)).toBe(false);
   });
 
   it("returns false when elevation has already expired", () => {
-    const expiresAt = new Date(NOW.getTime() - 60 * 1000); // 1 min ago
-    expect(isInWarningWindow(expiresAt, NOW, 5)).toBe(false);
+    const expiresAt = new Date(NOW.getTime() - 60 * 1000); // 60s ago
+    expect(isInWarningWindow(expiresAt, NOW, 300)).toBe(false);
   });
 
-  it("returns false when notifyBeforeMin is 0 (disabled)", () => {
-    const expiresAt = new Date(NOW.getTime() + 3 * 60 * 1000);
+  it("returns false when notifyBeforeSec is 0 (disabled)", () => {
+    const expiresAt = new Date(NOW.getTime() + 180 * 1000);
     expect(isInWarningWindow(expiresAt, NOW, 0)).toBe(false);
   });
 
-  it("returns false when notifyBeforeMin is negative", () => {
-    const expiresAt = new Date(NOW.getTime() + 3 * 60 * 1000);
+  it("returns false when notifyBeforeSec is negative", () => {
+    const expiresAt = new Date(NOW.getTime() + 180 * 1000);
     expect(isInWarningWindow(expiresAt, NOW, -1)).toBe(false);
   });
 
-  it("fires immediately after elevation when notifyBeforeMin >= sessionDurationMin", () => {
-    // If session is 5 min and warning window is 10 min, elevation is already in window
-    const expiresAt = new Date(NOW.getTime() + 5 * 60 * 1000); // 5 min session
-    expect(isInWarningWindow(expiresAt, NOW, 10)).toBe(true);
+  it("fires immediately after elevation when notifyBeforeSec >= sessionDurationSec", () => {
+    // If session is 300s (5 min) and warning window is 600s (10 min), elevation is already in window
+    const expiresAt = new Date(NOW.getTime() + 300 * 1000); // 300s session
+    expect(isInWarningWindow(expiresAt, NOW, 600)).toBe(true);
   });
 });
