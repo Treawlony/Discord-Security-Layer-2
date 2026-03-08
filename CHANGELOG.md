@@ -10,6 +10,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.0.2] — 2026-03-08
+
+### Fixed
+- Migration `20260308000000_add_admin_role_id_to_guild_config` used `"admin_role_id"` (snake_case) for the new column, but the project's DB convention (set by the init migration) is camelCase. Prisma expected `"adminRoleId"`, causing a `P2022` crash on every command after deployment. Corrected to `"adminRoleId"`.
+- Replaced deprecated `ephemeral: true` interaction option with `flags: MessageFlags.Ephemeral` across all 10 call sites (8 command files + `interactionCreate.ts`). Eliminates the `DeprecationWarning` logged on every interaction.
+
+---
+
 ## [0.0.1] — 2026-03-08
 
 Initial public release. Core PIM flow, help command, and decoupled bot management permissions.

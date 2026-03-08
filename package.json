@@ -1,6 +1,6 @@
 {
   "name": "discord-watchtower",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Privileged Identity Manager (PIM) bot for Discord — time-limited role elevation with audit logging.",
   "main": "dist/index.js",
   "scripts": {
