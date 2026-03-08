@@ -45,7 +45,6 @@ src/
   jobs/
     expireElevations.ts  # node-cron job — removes expired elevated roles every minute
   index.ts           # Entrypoint
-  deploy-commands.ts # One-shot script to register slash commands with Discord API
 prisma/
   schema.prisma  # All DB models (GuildConfig, PimUser, EligibleRole, ActiveElevation, AuditLog)
 ```
@@ -98,9 +97,6 @@ npm run db:migrate
 
 # Run DB migrations (development, creates migration files)
 npm run db:migrate:dev
-
-# Register slash commands globally (takes effect in all servers within ~1 hour)
-npm run deploy-commands
 
 # Start in development mode (auto-restart on change)
 npm run dev
@@ -182,7 +178,8 @@ The bot needs the following permissions in Discord:
 
 1. Create `src/commands/<admin|user>/my-command.ts`
 2. Export `data` (a `SlashCommandBuilder`) and `execute(interaction, client)`
-3. Run `npm run deploy-commands` to register with Discord
+3. Restart the bot — commands are registered globally with Discord automatically in the `ready` event; no manual deploy step is needed. Global propagation takes up to 1 hour.
+4. **Update `src/commands/user/help.ts`** — the help embed is static and must be manually updated to include the new command name and description in the appropriate section (Admin Commands or User Commands).
 
 ## Coding Conventions
 
