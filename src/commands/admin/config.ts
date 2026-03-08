@@ -59,6 +59,12 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
   const auditChannel = interaction.options.getChannel("audit-channel");
   const adminRole = interaction.options.getRole("admin-role");
 
+  if (adminRole !== null && adminRole.id === guildId) {
+    return interaction.editReply(
+      "The `@everyone` role cannot be used as the Watchtower Admin role — it includes all server members."
+    );
+  }
+
   const adminRoleChanged = adminRole !== null;
 
   const updated = await db.guildConfig.update({
