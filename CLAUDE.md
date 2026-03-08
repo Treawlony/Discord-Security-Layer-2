@@ -99,7 +99,7 @@ npm run db:migrate
 # Run DB migrations (development, creates migration files)
 npm run db:migrate:dev
 
-# Register slash commands (development — instant, uses DISCORD_GUILD_ID)
+# Register slash commands globally (takes effect in all servers within ~1 hour)
 npm run deploy-commands
 
 # Start in development mode (auto-restart on change)
@@ -169,8 +169,6 @@ All variables must be set in **Portainer → Stack → Environment variables** f
 
 > `DATABASE_URL` is constructed automatically from the Postgres vars — do **not** set it separately in Portainer.
 >
-> `DISCORD_GUILD_ID` is only used for local slash command deployment (`npm run deploy-commands`). Do not set it in Portainer.
-
 ## Required Bot Permissions
 
 The bot needs the following permissions in Discord:

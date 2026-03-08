@@ -1,13 +1,19 @@
 import "dotenv/config";
-import "./lib/env"; // validate required env vars before anything else
 import { REST, Routes } from "discord.js";
 import path from "path";
 import fs from "fs";
-import { env } from "./lib/env";
 
-const token = env.DISCORD_TOKEN;
-const clientId = env.DISCORD_CLIENT_ID;
-const guildId = process.env.DISCORD_GUILD_ID; // optional for dev
+const token = process.env.DISCORD_TOKEN;
+const clientId = process.env.DISCORD_CLIENT_ID;
+
+if (!token) {
+  console.error("[deploy-commands] DISCORD_TOKEN is required.");
+  process.exit(1);
+}
+if (!clientId) {
+  console.error("[deploy-commands] DISCORD_CLIENT_ID is required.");
+  process.exit(1);
+}
 
 const commands: object[] = [];
 
@@ -30,15 +36,10 @@ const walkDir = (dir: string) => {
 
 walkDir(commandsPath);
 
-const rest = new REST().setToken(token);
+const rest = new REST().setToken(token as string);
 
 (async () => {
-  console.log(`Deploying ${commands.length} command(s)...`);
-  if (guildId) {
-    await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
-    console.log(`Deployed to guild ${guildId} (instant)`);
-  } else {
-    await rest.put(Routes.applicationCommands(clientId), { body: commands });
-    console.log("Deployed globally (may take up to 1 hour to propagate)");
-  }
+  console.log(`Deploying ${commands.length} command(s) globally...`);
+  await rest.put(Routes.applicationCommands(clientId as string), { body: commands });
+  console.log("Global deployment done. Commands propagate to all servers within ~1 hour.");
 })();

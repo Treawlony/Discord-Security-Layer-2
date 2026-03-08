@@ -1,6 +1,20 @@
 version: "3.9"
 
 services:
+  # One-shot service: registers slash commands with the Discord API on every deploy.
+  # Runs node dist/deploy-commands.js then exits (restart: "no").
+  # No DATABASE_URL needed — the script only calls the Discord REST API.
+  deploy-commands:
+    build: .
+    restart: "no"
+    command: ["node", "dist/deploy-commands.js"]
+    environment:
+      NODE_ENV: production
+      DISCORD_TOKEN: ${DISCORD_TOKEN}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
+      # DISCORD_GUILD_ID is intentionally omitted for production (global registration).
+      # Set it in your local .env for instant guild-scoped registration during development.
+
   bot:
     build: .
     restart: unless-stopped
