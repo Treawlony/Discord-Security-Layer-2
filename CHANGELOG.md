@@ -10,6 +10,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.0.3] — 2026-03-08
+
+### Fixed
+- Admin commands now have no `setDefaultMemberPermissions` call — they are visible to all users in the Discord UI, and `isWatchtowerAdmin()` is the sole runtime gate. Previously, commands were incorrectly hidden from the UI for non-Administrators, making the bot appear broken to legitimate Watchtower Admin role holders.
+- Removed a stale `PermissionFlagsBits` import from all five admin command files left over from the `setDefaultMemberPermissions` removal.
+- Fixed a TypeScript type error in `interactionCreate.ts` introduced when adding the `client` parameter to command `execute()` signatures.
+- Moved `prisma` CLI from `devDependencies` to `dependencies` so that `prisma migrate deploy` runs correctly in the Docker runner stage (which strips dev deps via `npm ci --omit=dev`).
+
+---
+
 ## [0.0.2] — 2026-03-08
 
 ### Fixed
