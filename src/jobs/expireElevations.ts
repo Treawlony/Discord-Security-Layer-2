@@ -5,7 +5,6 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  Message,
 } from "discord.js";
 import { db } from "../lib/database";
 import { writeAuditLog } from "../lib/audit";
@@ -155,12 +154,7 @@ async function runExpiryScan(client: Client): Promise<void> {
         const alertChannel = await client.channels.fetch(config.alertChannelId) as TextChannel;
         if (alertChannel?.isTextBased()) {
           const msg = await (alertChannel as TextChannel).messages.fetch(elevation.alertMessageId);
-          const expiredBtn = new ButtonBuilder()
-            .setCustomId(`self_revoke:${elevation.id}`)
-            .setLabel("Expired")
-            .setStyle(ButtonStyle.Secondary)
-            .setDisabled(true);
-          await msg.edit({ components: [new ActionRowBuilder<ButtonBuilder>().addComponents(expiredBtn)] });
+          await msg.edit({ components: [] });
         }
       } catch {
         // Non-fatal — message may have been deleted

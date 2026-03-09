@@ -154,21 +154,26 @@ export async function handleSelfRevoke(
     roleName: elevation.roleName,
   });
 
-  // Disable the revoke button on the original alert channel message.
+  // Remove the button from the original alert channel message entirely.
   try {
-    await interaction.message.edit({ components: [_buildDisabledAlertRow(elevationId, "Revoked")] });
+    await interaction.message.edit({ components: [] });
   } catch {
     // Non-fatal — original message may have been deleted
   }
 
-  // Disable the admin buttons on the audit channel message.
+  // Update the audit channel message: disable admin buttons and update content so
+  // admins know the session was self-revoked (not admin-revoked) and eligibility
+  // is still intact — preventing accidental /watchtower-revoke runs.
   const config = await getOrCreateGuildConfig(elevation.guildId);
   if (config.auditChannelId && elevation.auditMessageId) {
     try {
       const auditChannel = await client.channels.fetch(config.auditChannelId) as TextChannel;
       if (auditChannel?.isTextBased()) {
         const auditMsg = await auditChannel.messages.fetch(elevation.auditMessageId);
-        await auditMsg.edit({ components: [_buildDisabledAdminRow(elevationId)] });
+        await auditMsg.edit({
+          content: `↩️ **Session Self-Revoked** — <@${elevation.pimUser.discordUserId}>'s **${elevation.roleName}** session was ended early by the user. Role removed; eligibility intact.`,
+          components: [_buildDisabledAdminRow(elevationId)],
+        });
       }
     } catch {
       // Non-fatal — message may have been deleted
@@ -254,13 +259,13 @@ export async function handleRemovePerm(
     // Non-fatal
   }
 
-  // Disable the revoke button on the alert channel message.
+  // Remove the button from the alert channel message entirely.
   if (config.alertChannelId && elevation.alertMessageId) {
     try {
       const alertChannel = await client.channels.fetch(config.alertChannelId) as TextChannel;
       if (alertChannel?.isTextBased()) {
         const alertMsg = await alertChannel.messages.fetch(elevation.alertMessageId);
-        await alertMsg.edit({ components: [_buildDisabledAlertRow(elevationId, "Revoked")] });
+        await alertMsg.edit({ components: [] });
       }
     } catch {
       // Non-fatal — message may have been deleted
@@ -363,13 +368,13 @@ export async function handleRemovePermBlock(
     // Non-fatal
   }
 
-  // Disable the revoke button on the alert channel message.
+  // Remove the button from the alert channel message entirely.
   if (config.alertChannelId && elevation.alertMessageId) {
     try {
       const alertChannel = await client.channels.fetch(config.alertChannelId) as TextChannel;
       if (alertChannel?.isTextBased()) {
         const alertMsg = await alertChannel.messages.fetch(elevation.alertMessageId);
-        await alertMsg.edit({ components: [_buildDisabledAlertRow(elevationId, "Revoked")] });
+        await alertMsg.edit({ components: [] });
       }
     } catch {
       // Non-fatal — message may have been deleted
@@ -386,16 +391,6 @@ export async function handleRemovePermBlock(
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
-function _buildDisabledAlertRow(elevationId: string, label: string): ActionRowBuilder<ButtonBuilder> {
-  const btn = new ButtonBuilder()
-    .setCustomId(`self_revoke:${elevationId}`)
-    .setLabel(label)
-    .setStyle(ButtonStyle.Secondary)
-    .setDisabled(true);
-
-  return new ActionRowBuilder<ButtonBuilder>().addComponents(btn);
-}
-
 function _buildDisabledAdminRow(elevationId: string): ActionRowBuilder<ButtonBuilder> {
   const removeBtn = new ButtonBuilder()
     .setCustomId(`remove_perm:${elevationId}`)

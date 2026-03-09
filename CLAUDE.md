@@ -211,7 +211,10 @@ The bot is designed to run in multiple Discord servers simultaneously. Every fea
 - Button `customId` format: `<action>:<recordId>`. The record ID is parsed with `.slice("<action>:".length)`.
 - Always re-fetch the DB record inside the handler and guard against not-found (the record may have been deleted by the expiry scan between message post and button click). Never rely on data embedded in the `customId`.
 - Auth checks in button handlers: "Extend Session" and "Revoke Early" check `interaction.user.id === elevation.pimUser.discordUserId`; "Remove Permission" and "Remove Permission and Block" call `isWatchtowerAdmin(interaction.member as GuildMember, config)`.
-- After performing the action, disable buttons on **both** the alert and audit channel messages (wrapped in try/catch — non-fatal if the message was deleted). Use `_buildDisabledAlertRow` and `_buildDisabledAdminRow` helpers in `buttonHandlers.ts`. The expiry cron does the same on natural expiry.
+- After performing the action, update both channel messages (wrapped in try/catch — non-fatal if the message was deleted):
+  - **Alert channel message**: edit with `components: []` to remove the button entirely — do NOT grey it out. A lingering disabled button causes users to think their account setup was affected.
+  - **Audit channel message**: use `_buildDisabledAdminRow(elevationId)` to grey out the admin buttons (visual record that the session ended). For self-revoke specifically, also update the message `content` to say "Session Self-Revoked … eligibility intact" so admins don't accidentally run `/watchtower-revoke`.
+- `_buildDisabledAdminRow` is the only cleanup helper remaining. `_buildDisabledAlertRow` was removed — do not re-add it. The expiry cron follows the same `components: []` pattern for alert messages on natural expiry.
 - `ActiveElevation` stores `alertMessageId` and `auditMessageId` so any code path that ends a session (self-revoke, admin-revoke, natural expiry) can reach back and disable the buttons.
 - Button routing in `interactionCreate.ts` uses `customId.startsWith("<prefix>")`. When two prefixes share a common start (e.g. `remove_perm:` and `remove_perm_block:`), the **longer/more-specific prefix must be checked first**.
 
