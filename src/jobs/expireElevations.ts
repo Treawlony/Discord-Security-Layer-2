@@ -1,4 +1,4 @@
-import cron from "node-cron";
+import cron, { ScheduledTask } from "node-cron";
 import {
   Client,
   TextChannel,
@@ -9,19 +9,20 @@ import {
 import { db } from "../lib/database";
 import { writeAuditLog } from "../lib/audit";
 
-export function startExpiryJob(client: Client): void {
+export function startExpiryJob(client: Client): ScheduledTask {
   // Run every minute to check for expiry warnings and expired elevations.
-  cron.schedule("* * * * *", async () => {
+  const task = cron.schedule("* * * * *", async () => {
     await runWarningScan(client);
     await runExpiryScan(client);
   });
 
   console.log("[Jobs] Elevation expiry job started");
+  return task;
 }
 
 // ---------------------------------------------------------------------------
 // Warning scan — posts an expiry warning to the audit channel for any
-// elevation that is within the guild's notifyBeforeMin window and has not
+// elevation that is within the guild's notifyBeforeSec window and has not
 // yet been warned (notifiedAt IS NULL).
 // ---------------------------------------------------------------------------
 async function runWarningScan(client: Client): Promise<void> {

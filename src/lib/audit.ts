@@ -47,7 +47,7 @@ export async function writeAuditLog(client: Client, params: AuditParams): Promis
   }
 }
 
-function eventTypeEmoji(type: AuditEventType): string {
+export function eventTypeEmoji(type: AuditEventType): string {
   const map: Partial<Record<AuditEventType, string>> = {
     ELEVATION_GRANTED: "⬆️",
     ELEVATION_EXPIRED: "⏱️",

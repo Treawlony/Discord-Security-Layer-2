@@ -1,87 +1,116 @@
 # Session Checkpoint
 **Saved:** 2026-03-09
-**Session duration:** ~2 hours
+**Session duration:** ~3 hours (multi-session, continued across context limit)
 
 ## What We Were Working On
-Three features delivered this session, all on the `develop` branch:
-1. Self-revoke "Revoke Early" button on alert channel elevation messages
-2. Button cleanup (disable) when a session ends by any path
-3. Bare-number default (= minutes) in duration parsing
+
+Full agile development cycle (Phases 1–8) for five new features targeting the first stable production release. All phases completed; tag `v1.0.0` created on `develop`.
 
 ## Current Phase
-Done. Working tree is clean. All commits pushed to `origin/develop`.
+
+Done. All work committed on `develop` as `v1.0.0` (commit fa1448c). Tag `v1.0.0` created locally. Working tree is clean.
+
+**NOT yet merged to `master`.** User must confirm staging bot passes smoke tests before merging.
 
 ## Completed This Session
 
-### Branch / Deployment Setup (no code change)
-- `develop` → staging bot (Portainer staging stack)
-- `master` → production bot
-- All work targets `develop`. Merge to `master` only after user confirmation.
-- CLAUDE.md updated to document this strategy.
+### Feature 1 — Graceful Shutdown
+- `src/index.ts`: added `isShuttingDown` boolean guard, `shutdown()` async function, SIGTERM/SIGINT handlers registered after `startExpiryJob`
+- `src/jobs/expireElevations.ts`: `startExpiryJob` now returns `ScheduledTask` so shutdown can call `.stop()`
 
-### Self-Revoke Button + Button Cleanup on Session End (commit 347cd50)
-- New audit event `ELEVATION_SELF_REVOKED` added to Prisma schema + migration `20260309000001`
-- `ActiveElevation` gains `alertMessageId String?` and `auditMessageId String?` — migration `20260309000002`
-- `src/commands/user/elevate.ts` — captures returned message IDs from both channel sends, stores them via `db.activeElevation.update`
-- `src/lib/buttonHandlers.ts`:
-  - New `handleSelfRevoke` handler (`self_revoke:<id>`) — auth: user themselves only
-  - `handleSelfRevoke`: disables alert message (via `interaction.message`) + disables audit message (fetched by stored ID)
-  - `handleRemovePerm` / `handleRemovePermBlock`: also disable the alert channel message (previously only disabled audit)
-  - New helpers `_buildDisabledAlertRow(elevationId, label)` and existing `_buildDisabledAdminRow`
-- `src/jobs/expireElevations.ts` — on natural expiry, edits alert message → "Expired" (disabled) and audit message → disabled admin buttons
-- `src/events/interactionCreate.ts` — routes `self_revoke:` to `handleSelfRevoke`
-- `src/lib/audit.ts` — `↩️` emoji for `ELEVATION_SELF_REVOKED`
-- `tests/expiry-notifications.test.ts` — updated `notifiedAt` string assertion to not rely on exact whitespace
+### Feature 2 — Rate Limiting on `/elevate`
+- `src/commands/user/elevate.ts`: in-memory rolling-window rate limiter (`Map<string, number[]>`, 3 attempts per 60s, keyed `${guildId}:${userId}`)
+- Rate-limited rejections return ephemeral "slow down" reply; no audit log entry written
 
-### Duration Parsing Default = Minutes (commit efa1809)
-- `src/lib/duration.ts` — bare number with no unit treated as minutes (e.g. `"30"` → 1800s). Runs after `"0"` check, before unit-suffix regex.
-- `src/commands/admin/config.ts` — option descriptions and error messages updated to mention bare-number default
-- `tests/duration.test.ts` — updated "returns null for bare number" test to "treats bare integer as minutes"
+### Feature 3 — Bulk Eligibility Assignment
+- `src/commands/admin/assign.ts`: `role1` (required) + `role2`, `role3` (optional); discriminated union `RoleOutcome` type; exhaustive switch in `outcomeLabel`; idempotent via `findUnique` pre-check; deduplication of duplicate roles in single invocation
+- `processRole` parameter narrowed from `interaction: ChatInputCommandInteraction` to `grantedBy: string` (SF-2 fix)
 
-### Documentation (commit 4ee2ac8)
-- `CLAUDE.md` updated: PIM Flow, Guild Configuration field names, DB Schema Summary, Button Interaction Conventions, Alert vs Audit channel split, Duration Parsing section added
+### Feature 4 — `/watchtower-list` Active Elevations Section
+- `src/commands/admin/list.ts`: "Active Elevations" embed section with relative timestamps; `MAX_ASSIGNMENT_FIELDS = 20`, `MAX_ELEVATION_FIELDS = 5`; unified `baseWhere` variable (SF-3 fix); user filter applies to both queries
 
-## In Progress
-None. Working tree is clean.
+### Feature 5 — `/watchtower-audit` Command
+- `src/commands/admin/audit.ts`: new file; `user` and `recent` subcommands; 5500-char embed budget truncation; `eventTypeEmoji` reused from `src/lib/audit.ts`; both subcommands have optional `limit` defaulting to 10 (SF-4 fix)
+- `src/lib/audit.ts`: `eventTypeEmoji` promoted to named export
+
+### Supporting Changes
+- `src/commands/user/help.ts`: `/watchtower-audit` documented; `/watchtower-assign` description updated
+- `tests/admin-guard.test.ts`: `"audit"` added to `ADMIN_COMMANDS`; assertion updated for new assign.ts text
+- `tests/v0.4.0-features.test.ts`: 407-test suite (net of fixes); covers all 5 features structurally and with pure logic unit tests
+
+### Phase 7 — Documentation
+- `CHANGELOG.md`: `[1.0.0]` entry written (renamed from `[0.4.0]` with stable-release note)
+- `docs/deployment/v1.0.0-deploy.md`: full deployment checklist, smoke tests, rollback plan, known limitations
+- `docs/sprints/sprint-5-retro.md`: sprint retrospective with metrics, what went well, what to improve, backlog items
+
+### Phase 8 — Release
+- `package.json`: version bumped from `0.0.2` to `1.0.0`
+- Commit `fa1448c`: "chore: release v1.0.0 — update CHANGELOG"
+- Tag `v1.0.0` created on `develop` at commit `fa1448c`
+
+## In Progress (not finished)
+
+None. All code committed and tagged.
 
 ## Files Modified This Session
-- `prisma/schema.prisma` — `ELEVATION_SELF_REVOKED` enum value; `alertMessageId`/`auditMessageId` on `ActiveElevation`
-- `prisma/migrations/20260309000001_add_elevation_self_revoked_event/migration.sql` — new
-- `prisma/migrations/20260309000002_add_elevation_message_ids/migration.sql` — new
-- `src/commands/user/elevate.ts` — capture + store message IDs; alert message now has "Revoke Early" button
-- `src/lib/buttonHandlers.ts` — `handleSelfRevoke`, cross-channel button disabling, helpers
-- `src/jobs/expireElevations.ts` — disable both messages on natural expiry
-- `src/events/interactionCreate.ts` — route `self_revoke:`
-- `src/lib/audit.ts` — `ELEVATION_SELF_REVOKED` emoji
-- `src/lib/duration.ts` — bare number = minutes
-- `src/commands/admin/config.ts` — descriptions + error messages for bare-number default
-- `tests/expiry-notifications.test.ts` — minor assertion fix
-- `tests/duration.test.ts` — updated bare-number test
-- `CLAUDE.md` — comprehensive update
+
+**Source:**
+- `src/index.ts`
+- `src/jobs/expireElevations.ts`
+- `src/commands/user/elevate.ts`
+- `src/commands/admin/assign.ts`
+- `src/commands/admin/list.ts`
+- `src/commands/admin/audit.ts` (new)
+- `src/commands/user/help.ts`
+- `src/lib/audit.ts`
+
+**Tests:**
+- `tests/admin-guard.test.ts`
+- `tests/v0.4.0-features.test.ts` (new)
+
+**Docs (all new):**
+- `docs/epics/v0.4.0-operational-improvements.md`
+- `docs/stories/v0.4.0-stories.md`
+- `docs/design/v0.4.0-ux.md`
+- `docs/architecture/v0.4.0-design.md`
+- `docs/sprints/sprint-5-plan.md`
+- `docs/sprints/sprint-5-retro.md`
+- `docs/testing/v0.4.0-test-report.md`
+- `docs/security/v0.4.0-security-review.md`
+- `docs/performance/v0.4.0-perf.md`
+- `docs/reviews/v0.4.0-review.md`
+- `docs/deployment/v1.0.0-deploy.md`
+- `CHANGELOG.md`
+- `package.json`
 
 ## Decisions Made
-- **Self-revoke is user-only**: only `interaction.user.id === elevation.pimUser.discordUserId` may click "Revoke Early". Same pattern as "Extend Session".
-- **Button cleanup is cross-channel**: every session-ending path (self-revoke, admin-revoke, natural expiry) disables buttons on both the alert and audit messages. Silent non-fatal if message was deleted.
-- **Message IDs stored on elevation**: `alertMessageId` / `auditMessageId` on `ActiveElevation` — allows any code path to reach back and disable without needing channel state.
-- **Bare number = minutes in `parseDuration`**: consistent with how admins think about session durations. The `"0"` disable case is handled first (unchanged).
-- **Discord buttons don't auto-expire**: buttons on regular `channel.send()` messages persist forever. Our cron/handlers are the only cleanup mechanism.
+
+- **v1.0.0 not v0.4.0**: user designated this as the first major stable release milestone. Version bumped directly to 1.0.0; CHANGELOG entry renamed accordingly.
+- **No DB migrations in this release**: all five features reuse existing schema. Deployment is code-only, zero migration risk.
+- **Rate limit is in-memory only**: acceptable because the brute-force lockout (DB-backed) is the hard security gate. Rate limiter is a spam gate, not an auth gate.
+- **`baseWhere` unified**: SF-3 code review fix merged `assignmentWhere` and `elevationWhere` into a single `baseWhere` shared by both queries in list.ts.
+- **`recent` limit now optional**: SF-4 fix; both `user` and `recent` subcommands default to 10.
+- **`processRole` takes `grantedBy: string`**: SF-2 fix; function no longer depends on `ChatInputCommandInteraction`.
 
 ## Open Questions / Blockers
-None. All features tested (257 passing), typechecked clean, pushed to `develop`.
 
-## Exact Next Step
-No outstanding work. Wait for user to confirm staging bot works, then merge `develop → master`.
+None.
 
-To merge when ready:
-```
-git checkout master
-git merge develop
-git push origin master
-git tag vX.Y.Z && git push origin vX.Y.Z
-```
+## Exact Next Steps
+
+1. **User confirms staging**: push `develop` to origin and confirm the Portainer staging bot deploys cleanly and passes the smoke tests in `docs/deployment/v1.0.0-deploy.md`.
+2. **Merge to master**: once staging is confirmed, merge `develop` → `master`.
+3. **Push tag**: `git push origin v1.0.0` (and `git push origin master`).
+4. **Portainer production redeploy**: Pull and redeploy the production stack pointing to `master`.
 
 ## Relevant Context
-- Last pushed commits on `develop`: `4ee2ac8` (docs), `efa1809` (duration), `347cd50` (self-revoke + button cleanup)
-- `master` is behind `develop` by these 3 commits + the previous session's patch (ccfc3b6)
-- Test count: 257 passing
-- Two new DB migrations will run on next container restart: `20260309000001` (enum value) and `20260309000002` (two nullable columns on `active_elevations`)
+
+- Current branch: `develop`
+- Latest commit: `fa1448c` — "chore: release v1.0.0 — update CHANGELOG"
+- Tag `v1.0.0` is on `fa1448c` (local only — not yet pushed)
+- `master` is still at `v0.3.0` — has NOT been updated yet
+- Test count: 407 passing (was 278 at start of this sprint)
+- No DB migrations in this release — `prisma migrate deploy` is a no-op on deployment
+- `/watchtower-audit` is a NEW global slash command — allow up to 1 hour for Discord to propagate it after deployment
+- `/watchtower-assign` `role` option renamed to `role1` — also propagates within 1 hour; non-breaking
+- Pre-existing lint error in `commandLoader.ts` (`no-var-requires`) is known and pre-dates this sprint

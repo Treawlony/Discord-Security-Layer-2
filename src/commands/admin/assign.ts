@@ -4,7 +4,10 @@ import {
   Client,
   GuildMember,
   MessageFlags,
+  Role,
+  Guild,
 } from "discord.js";
+import { GuildConfig, PimUser } from "@prisma/client";
 import { db } from "../../lib/database";
 import { writeAuditLog } from "../../lib/audit";
 import { getOrCreateGuildConfig } from "../../lib/guildConfig";
@@ -12,10 +15,105 @@ import { isWatchtowerAdmin } from "../../lib/permissions";
 
 export const data = new SlashCommandBuilder()
   .setName("watchtower-assign")
-  .setDescription("Assign role eligibility to a user.")
+  .setDescription("Assign role eligibility to a user (up to 3 roles at once).")
   .addUserOption((opt) => opt.setName("user").setDescription("The user").setRequired(true))
-  .addRoleOption((opt) => opt.setName("role").setDescription("The role to make eligible").setRequired(true));
+  .addRoleOption((opt) =>
+    opt.setName("role1").setDescription("Role to make eligible (required)").setRequired(true)
+  )
+  .addRoleOption((opt) =>
+    opt.setName("role2").setDescription("Additional role to make eligible (optional)").setRequired(false)
+  )
+  .addRoleOption((opt) =>
+    opt.setName("role3").setDescription("Additional role to make eligible (optional)").setRequired(false)
+  );
 
+// ---------------------------------------------------------------------------
+// Per-role outcome type
+// ---------------------------------------------------------------------------
+type RoleOutcome =
+  | { status: "assigned";         roleName: string }
+  | { status: "already_assigned"; roleName: string }
+  | { status: "skipped";          roleName: string; reason: string };
+
+async function processRole(
+  client: Client,
+  grantedBy: string,
+  guildId: string,
+  config: GuildConfig,
+  pimUser: PimUser,
+  botMember: GuildMember,
+  role: Role,
+): Promise<RoleOutcome> {
+  // Guard: do not allow eligibility for the Watchtower Admin role
+  if (config.adminRoleId && role.id === config.adminRoleId) {
+    return {
+      status: "skipped",
+      roleName: role.name,
+      reason: "this is the configured Watchtower Admin role",
+    };
+  }
+
+  // Guard: role hierarchy check
+  if (role.position >= botMember.roles.highest.position) {
+    return {
+      status: "skipped",
+      roleName: role.name,
+      reason: "role is at or above the bot in the server's role hierarchy",
+    };
+  }
+
+  // Idempotency: check whether the assignment already exists
+  const existing = await db.eligibleRole.findUnique({
+    where: { pimUserId_roleId: { pimUserId: pimUser.id, roleId: role.id } },
+  });
+
+  await db.eligibleRole.upsert({
+    where: { pimUserId_roleId: { pimUserId: pimUser.id, roleId: role.id } },
+    update: { grantedBy, roleName: role.name },
+    create: {
+      pimUserId: pimUser.id,
+      roleId: role.id,
+      roleName: role.name,
+      guildId,
+      grantedBy,
+    },
+  });
+
+  if (existing) {
+    return { status: "already_assigned", roleName: role.name };
+  }
+
+  // Write audit entry only for genuinely new assignments
+  await writeAuditLog(client, {
+    guildId,
+    discordUserId: pimUser.discordUserId,
+    pimUserId: pimUser.id,
+    eventType: "ELIGIBILITY_GRANTED",
+    roleId: role.id,
+    roleName: role.name,
+    metadata: { grantedBy, isWatchtowerAdmin: true },
+  });
+
+  return { status: "assigned", roleName: role.name };
+}
+
+// ---------------------------------------------------------------------------
+// Build a human-readable summary line for one outcome
+// ---------------------------------------------------------------------------
+function outcomeLabel(outcome: RoleOutcome): string {
+  switch (outcome.status) {
+    case "assigned":
+      return `• **${outcome.roleName}** — assigned`;
+    case "already_assigned":
+      return `• **${outcome.roleName}** — already assigned (no change)`;
+    case "skipped":
+      return `• **${outcome.roleName}** — skipped: ${outcome.reason}`;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Command handler
+// ---------------------------------------------------------------------------
 export async function execute(interaction: ChatInputCommandInteraction, client: Client) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
@@ -30,29 +128,6 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
   }
 
   const target = interaction.options.getUser("user", true);
-  const role = interaction.options.getRole("role", true);
-
-  // Check if the bot can manage this role (role hierarchy)
-  try {
-    const guild = await client.guilds.fetch(guildId);
-    const botMember = guild.members.me ?? (await guild.members.fetchMe());
-    if (role.position >= botMember.roles.highest.position) {
-      return interaction.editReply(
-        `**Cannot assign eligibility for ${role.name}.** ` +
-          `This role is at or above the bot in the server's role hierarchy — the bot cannot grant or revoke it.\n\n` +
-          `**To fix:** Go to **Server Settings → Roles** and drag the bot's role above **${role.name}**, then try again.`
-      );
-    }
-  } catch {
-    // Non-fatal — if hierarchy cannot be checked, let it proceed and fail gracefully at elevation time
-  }
-
-  // Warn if assigning eligibility for the configured Watchtower Admin role
-  if (config.adminRoleId && role.id === config.adminRoleId) {
-    return interaction.editReply(
-      `**Warning:** <@&${role.id}> is the configured Watchtower Admin role. Users should not be granted PIM eligibility for it. If you intended to assign a different role, please run the command again.`
-    );
-  }
 
   // Ensure PIM user record exists (must have set a password first)
   const pimUser = await db.pimUser.findUnique({
@@ -65,29 +140,62 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     );
   }
 
-  await db.eligibleRole.upsert({
-    where: { pimUserId_roleId: { pimUserId: pimUser.id, roleId: role.id } },
-    update: { grantedBy: interaction.user.id, roleName: role.name },
-    create: {
-      pimUserId: pimUser.id,
-      roleId: role.id,
-      roleName: role.name,
-      guildId,
-      grantedBy: interaction.user.id,
-    },
-  });
+  // Collect provided roles and deduplicate by role ID
+  const rawRoles = [
+    interaction.options.getRole("role1", true),
+    interaction.options.getRole("role2"),
+    interaction.options.getRole("role3"),
+  ].filter((r): r is Role => r !== null);
 
-  await writeAuditLog(client, {
-    guildId,
-    discordUserId: target.id,
-    pimUserId: pimUser.id,
-    eventType: "ELIGIBILITY_GRANTED",
-    roleId: role.id,
-    roleName: role.name,
-    metadata: { grantedBy: interaction.user.id, isWatchtowerAdmin: true },
-  });
+  const uniqueRoles = [...new Map(rawRoles.map((r) => [r.id, r])).values()];
+
+  // Fetch bot member once for the hierarchy check across all roles
+  let botMember: GuildMember;
+  let guild: Guild;
+  try {
+    guild = await client.guilds.fetch(guildId);
+    botMember = guild.members.me ?? (await guild.members.fetchMe());
+  } catch {
+    return interaction.editReply(
+      "Could not fetch guild information to verify role hierarchy. Please try again."
+    );
+  }
+
+  // Process each role and collect outcomes
+  const grantedBy = interaction.user.id;
+  const outcomes: RoleOutcome[] = [];
+  for (const role of uniqueRoles) {
+    const outcome = await processRole(
+      client,
+      grantedBy,
+      guildId,
+      config,
+      pimUser,
+      botMember,
+      role,
+    );
+    outcomes.push(outcome);
+  }
+
+  // Build reply
+  const lines = outcomes.map(outcomeLabel);
+  const allAlreadyAssigned = outcomes.every((o) => o.status === "already_assigned");
+  const anyAssigned = outcomes.some((o) => o.status === "assigned");
+
+  let footer: string;
+  if (allAlreadyAssigned) {
+    footer = "\nNo changes were made.";
+  } else if (anyAssigned) {
+    footer = "\nThey can use `/elevate` to request any newly assigned role.";
+  } else {
+    footer = "";
+  }
+
+  const verb = outcomes.length === 1 && outcomes[0].status === "assigned"
+    ? "assigned"
+    : "processed";
 
   return interaction.editReply(
-    `<@${target.id}> is now eligible for **${role.name}**. They can use \`/elevate\` to request it.`
+    `Role eligibility ${verb} for <@${target.id}>:\n${lines.join("\n")}${footer}`
   );
 }

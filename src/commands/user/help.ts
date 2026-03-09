@@ -42,12 +42,14 @@ export async function execute(interaction: ChatInputCommandInteraction, _client:
         name: "Admin Commands",
         value:
           "*Require the Watchtower Admin role (or Discord Administrator in bootstrap mode).*\n\n" +
-          "`/watchtower-assign` — Grant role eligibility to a user.\n" +
+          "`/watchtower-assign` — Grant role eligibility to a user (up to 3 roles at once).\n" +
           "`/watchtower-revoke` — Remove a user's eligibility and end any active elevation session.\n" +
-          "`/watchtower-list` — View all PIM role assignments in this server.\n" +
+          "`/watchtower-list` — View all PIM role assignments and active elevations in this server.\n" +
           "`/watchtower-unlock` — Clear an account lockout or admin block on a PIM account.\n" +
           "`/watchtower-reset-password` — Clear a user's PIM password, forcing them to run `/set-password` again.\n" +
-          "`/watchtower-config` — View or update session duration (e.g. `2h`, `30m`), expiry warning timing, lockout threshold, and logging channels.",
+          "`/watchtower-config` — View or update session duration (e.g. `2h`, `30m`), expiry warning timing, lockout threshold, and logging channels.\n" +
+          "`/watchtower-audit user:@User` — Show a user's recent audit log entries.\n" +
+          "`/watchtower-audit recent:N` — Show the last N audit log entries for this server (max 25).",
       }
     )
     .setFooter({ text: "Only you can see this message." })
