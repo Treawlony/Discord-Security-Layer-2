@@ -88,7 +88,7 @@ describe("help command — execute", () => {
     expect(embedJson.description).toContain("PIM");
   });
 
-  it("embed fields cover all eight commands", async () => {
+  it("embed fields cover all nine commands", async () => {
     await execute(interaction, {} as Client);
     const call = interaction.editReply.mock.calls[0][0] as { embeds: Array<{ toJSON(): Record<string, unknown> }> };
     const embedJson = call.embeds[0].toJSON() as { fields: Array<{ name: string; value: string }> };
@@ -103,6 +103,7 @@ describe("help command — execute", () => {
       "/watchtower-revoke",
       "/watchtower-list",
       "/watchtower-unlock",
+      "/watchtower-reset-password",
       "/watchtower-config",
     ];
 

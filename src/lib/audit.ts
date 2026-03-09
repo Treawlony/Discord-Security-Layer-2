@@ -58,6 +58,7 @@ function eventTypeEmoji(type: AuditEventType): string {
     ACCOUNT_UNLOCKED: "🔓",
     PASSWORD_SET: "🔐",
     PASSWORD_CHANGED: "🔄",
+    PASSWORD_RESET: "🔏",
     ELIGIBILITY_GRANTED: "✅",
     ELIGIBILITY_REVOKED: "❌",
     ELEVATION_EXPIRY_WARNING: "⏰",

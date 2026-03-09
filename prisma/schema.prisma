@@ -38,7 +38,7 @@ model PimUser {
   id             String   @id @default(cuid())
   discordUserId  String
   guildId        String
-  passwordHash   String
+  passwordHash   String?
   failedAttempts Int      @default(0)
   lockedAt       DateTime?
   // Set by admin "Remove Permission and Block" action; prevents future elevations until cleared
@@ -125,4 +125,5 @@ enum AuditEventType {
   ELEVATION_ADMIN_REVOKED
   ELEVATION_ADMIN_REVOKED_BLOCKED
   ELEVATION_BLOCKED
+  PASSWORD_RESET
 }

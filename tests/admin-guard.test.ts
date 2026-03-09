@@ -21,6 +21,7 @@ const ADMIN_COMMANDS = [
   "list",
   "unlock",
   "config",
+  "reset-password",
 ];
 
 const ADMIN_DIR = path.resolve(__dirname, "../src/commands/admin");
@@ -72,7 +73,7 @@ describe("Admin command guard — isWatchtowerAdmin import and usage", () => {
 // Audit log enrichment — admin commands that write audit logs
 // ---------------------------------------------------------------------------
 
-const AUDIT_COMMANDS = ["assign", "revoke", "unlock", "config"];
+const AUDIT_COMMANDS = ["assign", "revoke", "unlock", "config", "reset-password"];
 
 describe("Admin command audit log enrichment — isWatchtowerAdmin flag in metadata", () => {
   for (const cmd of AUDIT_COMMANDS) {

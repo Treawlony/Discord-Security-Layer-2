@@ -10,6 +10,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.0] — 2026-03-09
+
+### Added
+- **`/watchtower-reset-password user:@user`** — new admin command. Clears a user's PIM password hash (sets it to `NULL`), simultaneously clears `lockedAt`, `blockedAt`, and resets `failedAttempts` to 0. Requires the Watchtower Admin role. The target user must run `/set-password` before they can elevate again. Their eligible role assignments are preserved.
+- **`PASSWORD_RESET` audit event** — new `AuditEventType` value written to the `audit_logs` table on every successful password reset. Metadata includes `resetBy` (admin Discord user ID) and `isWatchtowerAdmin: true`. The event is echoed to the configured audit channel.
+- **Null-password guard in `/elevate`** — when `PimUser.passwordHash` is `NULL`, `/elevate` returns a clear ephemeral error instructing the user to run `/set-password`. Fires after the `lockedAt` and `blockedAt` checks, before `verifyPassword`. No `FAILED_ATTEMPT` is recorded.
+- **`/help` updated** — `/watchtower-reset-password` listed in the Admin Commands section.
+
+### Changed
+- `PimUser.passwordHash` is now nullable (`String?`). Existing non-null hashes are unaffected. The `NULL` state is the sentinel for "password cleared by admin".
+
+### Migration
+- `prisma/migrations/20260309000000_nullable_password_hash/migration.sql` — additive only:
+  - `ALTER TABLE "pim_users" ALTER COLUMN "passwordHash" DROP NOT NULL` — allows `NULL`; no existing data modified
+  - `ALTER TYPE "AuditEventType" ADD VALUE 'PASSWORD_RESET'`
+
+---
+
 ## [0.1.0] — 2026-03-08
 
 ### Added

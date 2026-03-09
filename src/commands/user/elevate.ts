@@ -55,6 +55,13 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     );
   }
 
+  // Null-password check — set when admin runs /watchtower-reset-password
+  if (pimUser.passwordHash === null) {
+    return interaction.editReply(
+      "Your PIM password has been reset by an administrator. Please run /set-password to set a new password before you can elevate."
+    );
+  }
+
   // Verify password
   const valid = await verifyPassword(password, pimUser.passwordHash);
   if (!valid) {
@@ -150,6 +157,20 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
 
     try {
       const guild = await client.guilds.fetch(guildId);
+
+      // Verify the bot can manage this role before attempting assignment
+      const botMember = guild.members.me ?? (await guild.members.fetchMe());
+      const targetRole = guild.roles.cache.get(roleId) ?? (await guild.roles.fetch(roleId));
+      if (!targetRole || targetRole.position >= botMember.roles.highest.position) {
+        await interaction.editReply({
+          content:
+            `Cannot grant **${eligible.roleName}** — this role is at or above the bot in the server's role hierarchy.\n\n` +
+            `Ask an administrator to go to **Server Settings → Roles** and drag the bot's role above **${eligible.roleName}**.`,
+          components: [],
+        });
+        return;
+      }
+
       const member = await guild.members.fetch(discordUserId);
       await member.roles.add(roleId, `PIM elevation by ${interaction.user.tag}`);
     } catch {

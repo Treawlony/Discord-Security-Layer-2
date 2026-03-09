@@ -46,6 +46,7 @@ export async function execute(interaction: ChatInputCommandInteraction, _client:
           "`/watchtower-revoke` — Remove a user's eligibility and end any active elevation session.\n" +
           "`/watchtower-list` — View all PIM role assignments in this server.\n" +
           "`/watchtower-unlock` — Clear an account lockout or admin block on a PIM account.\n" +
+          "`/watchtower-reset-password` — Clear a user's PIM password, forcing them to run `/set-password` again.\n" +
           "`/watchtower-config` — View or update session duration (e.g. `2h`, `30m`), expiry warning timing, lockout threshold, and logging channels.",
       }
     )

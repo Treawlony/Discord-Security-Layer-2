@@ -32,6 +32,21 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
   const target = interaction.options.getUser("user", true);
   const role = interaction.options.getRole("role", true);
 
+  // Check if the bot can manage this role (role hierarchy)
+  try {
+    const guild = await client.guilds.fetch(guildId);
+    const botMember = guild.members.me ?? (await guild.members.fetchMe());
+    if (role.position >= botMember.roles.highest.position) {
+      return interaction.editReply(
+        `**Cannot assign eligibility for ${role.name}.** ` +
+          `This role is at or above the bot in the server's role hierarchy — the bot cannot grant or revoke it.\n\n` +
+          `**To fix:** Go to **Server Settings → Roles** and drag the bot's role above **${role.name}**, then try again.`
+      );
+    }
+  } catch {
+    // Non-fatal — if hierarchy cannot be checked, let it proceed and fail gracefully at elevation time
+  }
+
   // Warn if assigning eligibility for the configured Watchtower Admin role
   if (config.adminRoleId && role.id === config.adminRoleId) {
     return interaction.editReply(
