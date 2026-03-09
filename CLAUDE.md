@@ -41,7 +41,7 @@ src/
     audit.ts          # Write audit log to DB and Discord channel (see skipChannelPost)
     guildConfig.ts    # Upsert guild config with defaults
     permissions.ts    # isWatchtowerAdmin() — runtime admin permission check
-    buttonHandlers.ts # Button interaction handlers (extend_session, remove_perm, remove_perm_block)
+    buttonHandlers.ts # Button interaction handlers (extend_session, self_revoke, remove_perm, remove_perm_block)
     commandLoader.ts  # Auto-discovers and loads all commands
     eventLoader.ts    # Registers Discord event handlers
   jobs/
@@ -58,10 +58,13 @@ prisma/
 2. User runs `/elevate`, enters their password
 3. Bot verifies password, resets failed-attempt counter on success
 4. Bot presents a string-select menu with the user's eligible roles
-5. User selects a role → role is assigned in Discord + `ActiveElevation` record created + interactive message posted to audit channel with "Remove Permission" / "Remove Permission and Block" buttons
+5. User selects a role → role is assigned in Discord + `ActiveElevation` record created
+   - Audit channel receives an interactive message with "Remove Permission" / "Remove Permission and Block" buttons
+   - Alert channel receives a user-facing ping with a **"Revoke Early"** button the user can click to self-revoke before expiry
+   - Both message IDs are stored on the `ActiveElevation` record so buttons can be disabled when the session ends
 6. The cron job runs every minute:
-   - **Warning scan**: finds sessions within `notifyBeforeMin` of expiry with `notifiedAt IS NULL`, posts a warning to the audit channel with an "Extend Session" button, sets `notifiedAt`
-   - **Expiry scan**: finds sessions past `expiresAt`, removes the Discord role, deletes the record
+   - **Warning scan**: finds sessions within `notifyBeforeMin` of expiry with `notifiedAt IS NULL`, posts a warning to the alert channel with an "Extend Session" button, sets `notifiedAt`
+   - **Expiry scan**: finds sessions past `expiresAt`, removes the Discord role, deletes the record, and disables the buttons on both channel messages ("Expired" on alert, grayed admin buttons on audit)
 
 ### Security Controls
 - **Password hashing**: bcrypt with 12 salt rounds; passwords never stored in plaintext
@@ -74,12 +77,12 @@ prisma/
 - **Button auth**: button handlers always re-fetch the elevation record from DB and re-validate auth server-side on every click. Never trust the `customId` alone.
 
 ### Guild Configuration (per-server)
-Stored in `GuildConfig`. Defaults come from `.env`:
-- `sessionDurationMin` (default: 60) — how long elevation lasts
+Stored in `GuildConfig`. Managed via `/watchtower-config`:
+- `sessionDurationSec` (default: 3600) — how long elevation lasts, in seconds
 - `lockoutThreshold` (default: 5) — failed attempts before lockout
-- `notifyBeforeMin` (default: 5) — minutes before expiry to post warning; `0` disables notifications
-- `alertChannelId` — fallback channel for plain-text elevation alerts (used when `auditChannelId` is not set)
-- `auditChannelId` — primary channel for audit log messages and interactive button messages (warnings, elevation grants)
+- `notifyBeforeSec` (default: 300) — seconds before expiry to post warning; `0` disables notifications
+- `alertChannelId` — user-facing channel: elevation-granted ping + "Revoke Early" button + expiry warning + "Extend Session" button
+- `auditChannelId` — admin-facing channel: full audit log + "Remove Permission" / "Remove Permission and Block" buttons
 - `adminRoleId` (default: null) — Discord role ID of the Watchtower Admin role. When null, bot management falls back to Discord `Administrator` permission (bootstrap mode). Once set, this role is the **sole** gate — `Administrator` alone is denied.
 
 ### Watchtower Admin Role — Bootstrap Behaviour
@@ -92,10 +95,10 @@ Stored in `GuildConfig`. Defaults come from `.env`:
 ## Database Schema Summary
 
 ```
-GuildConfig       — per-guild settings (incl. notifyBeforeMin)
-PimUser           — registered users (hashed password, lockout state, blockedAt)
+GuildConfig       — per-guild settings (sessionDurationSec, notifyBeforeSec, channel IDs, adminRoleId)
+PimUser           — registered users (hashed password nullable, lockout state, blockedAt)
 EligibleRole      — which roles a PimUser may elevate to
-ActiveElevation   — in-progress elevation sessions with expiry timestamps (incl. notifiedAt)
+ActiveElevation   — in-progress sessions (expiresAt, notifiedAt, alertMessageId, auditMessageId)
 AuditLog          — immutable event log (AuditEventType enum)
 ```
 
@@ -207,14 +210,15 @@ The bot is designed to run in multiple Discord servers simultaneously. Every fea
 - Button handlers MUST `deferReply({ flags: MessageFlags.Ephemeral })` as their first statement — Discord requires acknowledgement within 3 seconds.
 - Button `customId` format: `<action>:<recordId>`. The record ID is parsed with `.slice("<action>:".length)`.
 - Always re-fetch the DB record inside the handler and guard against not-found (the record may have been deleted by the expiry scan between message post and button click). Never rely on data embedded in the `customId`.
-- Auth checks in button handlers: "Extend Session" checks `interaction.user.id === elevation.pimUser.discordUserId`; "Remove Permission" and "Remove Permission and Block" call `isWatchtowerAdmin(interaction.member as GuildMember, config)`.
-- After performing the action, update the original message's components to disabled buttons (wrapped in try/catch — non-fatal if the message was deleted).
+- Auth checks in button handlers: "Extend Session" and "Revoke Early" check `interaction.user.id === elevation.pimUser.discordUserId`; "Remove Permission" and "Remove Permission and Block" call `isWatchtowerAdmin(interaction.member as GuildMember, config)`.
+- After performing the action, disable buttons on **both** the alert and audit channel messages (wrapped in try/catch — non-fatal if the message was deleted). Use `_buildDisabledAlertRow` and `_buildDisabledAdminRow` helpers in `buttonHandlers.ts`. The expiry cron does the same on natural expiry.
+- `ActiveElevation` stores `alertMessageId` and `auditMessageId` so any code path that ends a session (self-revoke, admin-revoke, natural expiry) can reach back and disable the buttons.
 - Button routing in `interactionCreate.ts` uses `customId.startsWith("<prefix>")`. When two prefixes share a common start (e.g. `remove_perm:` and `remove_perm_block:`), the **longer/more-specific prefix must be checked first**.
 
 ### Alert channel vs Audit channel
 
-- `alertChannelId` is **user-facing**: receives the elevation-granted ping and the expiry warning with the **Extend Session** button. Do not post admin-only content here.
-- `auditChannelId` is **admin-facing**: receives the elevation-granted message with **Remove Permission** / **Remove Permission and Block** buttons, plain-text expiry warnings, and all other audit log events.
+- `alertChannelId` is **user-facing**: receives the elevation-granted ping with a **"Revoke Early"** button (self-revoke), and the expiry warning with an **"Extend Session"** button. Do not post admin-only content here.
+- `auditChannelId` is **admin-facing**: receives the elevation-granted message with **"Remove Permission"** / **"Remove Permission and Block"** buttons, plain-text expiry warnings, and all other audit log events.
 - Both channels post independently — if both are configured, each receives its respective content. If only one is configured, that channel receives both sets of posts.
 - Any future feature that posts to a channel must follow this split.
 
@@ -223,6 +227,12 @@ The bot is designed to run in multiple Discord servers simultaneously. Every fea
 - `writeAuditLog` always posts a plain-text echo to the audit channel by default.
 - When your code has already posted its own interactive message (with buttons) to the audit channel for the same event, pass `skipChannelPost: true` to suppress the duplicate echo.
 - Current callers using `skipChannelPost: true`: `elevate.ts` for `ELEVATION_GRANTED`, `expireElevations.ts` for `ELEVATION_EXPIRY_WARNING`.
+
+### Duration Parsing — `src/lib/duration.ts`
+
+- `parseDuration(input)` converts a string to seconds. Accepted formats: `"30"` (bare number = minutes), `"30s"`, `"30m"`, `"2h"`, `"1d"`, `"0"` (disable).
+- A bare integer with no unit suffix is **always treated as minutes**. This is the default for `/watchtower-config` duration fields.
+- `formatDuration(seconds)` converts seconds back to a human-readable string (e.g. `3600` → `"1h"`).
 
 ### `PimUser` — `lockedAt` vs `blockedAt`
 
