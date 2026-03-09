@@ -166,17 +166,7 @@ async function runExpiryScan(client: Client): Promise<void> {
         const auditChannel = await client.channels.fetch(config.auditChannelId) as TextChannel;
         if (auditChannel?.isTextBased()) {
           const msg = await (auditChannel as TextChannel).messages.fetch(elevation.auditMessageId);
-          const disabledRemoveBtn = new ButtonBuilder()
-            .setCustomId(`remove_perm:${elevation.id}`)
-            .setLabel("Remove Permission")
-            .setStyle(ButtonStyle.Danger)
-            .setDisabled(true);
-          const disabledRemoveBlockBtn = new ButtonBuilder()
-            .setCustomId(`remove_perm_block:${elevation.id}`)
-            .setLabel("Remove Permission and Block")
-            .setStyle(ButtonStyle.Danger)
-            .setDisabled(true);
-          await msg.edit({ components: [new ActionRowBuilder<ButtonBuilder>().addComponents(disabledRemoveBtn, disabledRemoveBlockBtn)] });
+          await msg.edit({ components: [] });
         }
       } catch {
         // Non-fatal — message may have been deleted

@@ -446,6 +446,12 @@ describe("handleSelfRevoke — session-only revocation (Bug 1 regression)", () =
     expect(selfRevokeFn).toContain("Session Self-Revoked");
     expect(selfRevokeFn).toContain("eligibility intact");
   });
+
+  it("audit message buttons are also removed (components: [])", () => {
+    // Both alert and audit messages must have components: [] — no lingering greyed buttons
+    const compEmptyCount = (selfRevokeFn.match(/components: \[\]/g) ?? []).length;
+    expect(compEmptyCount).toBeGreaterThanOrEqual(2);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -470,6 +476,10 @@ describe("Alert channel button removal after session end (Bug 2 regression)", ()
 
     it("_buildDisabledAlertRow helper has been removed (no longer needed)", () => {
       expect(source).not.toContain("_buildDisabledAlertRow");
+    });
+
+    it("_buildDisabledAdminRow helper has been removed (no longer needed)", () => {
+      expect(source).not.toContain("_buildDisabledAdminRow");
     });
 
     it("handleSelfRevoke edits alert message with components: [] (no greyed button)", () => {
@@ -517,6 +527,19 @@ describe("Alert channel button removal after session end (Bug 2 regression)", ()
       const expiryScanText = source.slice(expiryScanStart);
       // Should not have a ButtonBuilder for the alert message (the "Expired" greyed button is gone)
       expect(expiryScanText).not.toContain('"Expired"');
+    });
+
+    it("expiry scan edits audit message with components: [] (admin buttons also removed)", () => {
+      const expiryScanStart = source.indexOf("async function runExpiryScan");
+      const expiryScanText = source.slice(expiryScanStart);
+      const compEmptyCount = (expiryScanText.match(/components: \[\]/g) ?? []).length;
+      expect(compEmptyCount).toBeGreaterThanOrEqual(2);
+    });
+
+    it("expiry scan does NOT create disabled Remove Permission buttons", () => {
+      const expiryScanStart = source.indexOf("async function runExpiryScan");
+      const expiryScanText = source.slice(expiryScanStart);
+      expect(expiryScanText).not.toContain('"Remove Permission"');
     });
   });
 });

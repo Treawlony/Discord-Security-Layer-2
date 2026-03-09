@@ -172,7 +172,7 @@ export async function handleSelfRevoke(
         const auditMsg = await auditChannel.messages.fetch(elevation.auditMessageId);
         await auditMsg.edit({
           content: `↩️ **Session Self-Revoked** — <@${elevation.pimUser.discordUserId}>'s **${elevation.roleName}** session was ended early by the user. Role removed; eligibility intact.`,
-          components: [_buildDisabledAdminRow(elevationId)],
+          components: [],
         });
       }
     } catch {
@@ -254,7 +254,7 @@ export async function handleRemovePerm(
 
   // Disable both action buttons on the original audit channel message.
   try {
-    await interaction.message.edit({ components: [_buildDisabledAdminRow(elevationId)] });
+    await interaction.message.edit({ components: [] });
   } catch {
     // Non-fatal
   }
@@ -363,7 +363,7 @@ export async function handleRemovePermBlock(
 
   // Disable both action buttons on the original audit channel message.
   try {
-    await interaction.message.edit({ components: [_buildDisabledAdminRow(elevationId)] });
+    await interaction.message.edit({ components: [] });
   } catch {
     // Non-fatal
   }
@@ -388,21 +388,3 @@ export async function handleRemovePermBlock(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-function _buildDisabledAdminRow(elevationId: string): ActionRowBuilder<ButtonBuilder> {
-  const removeBtn = new ButtonBuilder()
-    .setCustomId(`remove_perm:${elevationId}`)
-    .setLabel("Remove Permission")
-    .setStyle(ButtonStyle.Danger)
-    .setDisabled(true);
-
-  const removeBlockBtn = new ButtonBuilder()
-    .setCustomId(`remove_perm_block:${elevationId}`)
-    .setLabel("Remove Permission and Block")
-    .setStyle(ButtonStyle.Danger)
-    .setDisabled(true);
-
-  return new ActionRowBuilder<ButtonBuilder>().addComponents(removeBtn, removeBlockBtn);
-}
