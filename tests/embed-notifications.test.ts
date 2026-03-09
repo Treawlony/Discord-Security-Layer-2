@@ -556,10 +556,13 @@ describe("No-ping guarantee — channel sends never set content to a mention", (
     expect(window).not.toContain("content: `");
   });
 
-  it("expireElevations.ts warning alert send does not set content alongside the embed", () => {
+  it("expireElevations.ts warning alert send includes a content ping for the user (BUG-001 fix)", () => {
+    // <@userId> inside an embed description does NOT send a notification ping.
+    // The content field is intentionally set on the alert channel warning send so the
+    // user is notified when their session is about to expire.
     const source: string = fs.readFileSync(EXPIRE_SRC, "utf-8");
     const alertSendIdx = source.indexOf("embeds: [buildExpiryWarningAlertEmbed(");
-    const window = source.slice(Math.max(0, alertSendIdx - 50), alertSendIdx + 200);
-    expect(window).not.toContain("content: `");
+    const window = source.slice(Math.max(0, alertSendIdx - 200), alertSendIdx + 200);
+    expect(window).toContain("content: `<@");
   });
 });

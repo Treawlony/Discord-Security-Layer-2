@@ -192,6 +192,19 @@ export async function handleSelfRevoke(
     }
   }
 
+  // Remove the Extend Session button from the expiry warning message (if one was posted).
+  if (config.alertChannelId && elevation.warningMessageId) {
+    try {
+      const alertChannel = await client.channels.fetch(config.alertChannelId) as TextChannel;
+      if (alertChannel?.isTextBased()) {
+        const warningMsg = await alertChannel.messages.fetch(elevation.warningMessageId);
+        await warningMsg.edit({ components: [] });
+      }
+    } catch {
+      // Non-fatal — message may have been deleted
+    }
+  }
+
   await interaction.editReply({
     content: `Your **${elevation.roleName}** elevation has been revoked.`,
   });
@@ -282,6 +295,19 @@ export async function handleRemovePerm(
       if (alertChannel?.isTextBased()) {
         const alertMsg = await alertChannel.messages.fetch(elevation.alertMessageId);
         await alertMsg.edit({ components: [] });
+      }
+    } catch {
+      // Non-fatal — message may have been deleted
+    }
+  }
+
+  // Remove the Extend Session button from the expiry warning message (if one was posted).
+  if (config.alertChannelId && elevation.warningMessageId) {
+    try {
+      const alertChannel = await client.channels.fetch(config.alertChannelId) as TextChannel;
+      if (alertChannel?.isTextBased()) {
+        const warningMsg = await alertChannel.messages.fetch(elevation.warningMessageId);
+        await warningMsg.edit({ components: [] });
       }
     } catch {
       // Non-fatal — message may have been deleted
@@ -395,6 +421,19 @@ export async function handleRemovePermBlock(
       if (alertChannel?.isTextBased()) {
         const alertMsg = await alertChannel.messages.fetch(elevation.alertMessageId);
         await alertMsg.edit({ components: [] });
+      }
+    } catch {
+      // Non-fatal — message may have been deleted
+    }
+  }
+
+  // Remove the Extend Session button from the expiry warning message (if one was posted).
+  if (config.alertChannelId && elevation.warningMessageId) {
+    try {
+      const alertChannel = await client.channels.fetch(config.alertChannelId) as TextChannel;
+      if (alertChannel?.isTextBased()) {
+        const warningMsg = await alertChannel.messages.fetch(elevation.warningMessageId);
+        await warningMsg.edit({ components: [] });
       }
     } catch {
       // Non-fatal — message may have been deleted

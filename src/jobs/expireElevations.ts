@@ -73,13 +73,23 @@ async function runWarningScan(client: Client): Promise<void> {
 
             const row = new ActionRowBuilder<ButtonBuilder>().addComponents(extendButton);
 
-            await alertChannel.send({
+            // content: ping is required — <@userId> inside an embed description does NOT
+            // trigger a Discord notification. Only the message content field sends a ping.
+            const warningMsg = await alertChannel.send({
+              content: `<@${elevation.pimUser.discordUserId}>`,
               embeds: [buildExpiryWarningAlertEmbed(
                 elevation.pimUser.discordUserId,
                 elevation.roleName,
                 elevation.expiresAt
               )],
               components: [row],
+            });
+
+            // Store the warning message ID so any session-ending path can remove
+            // the Extend Session button when the session is no longer active.
+            await db.activeElevation.update({
+              where: { id: elevation.id },
+              data: { warningMessageId: warningMsg.id },
             });
           }
         } catch (err) {
@@ -174,6 +184,21 @@ async function runExpiryScan(client: Client): Promise<void> {
         const auditChannel = await client.channels.fetch(config.auditChannelId) as TextChannel;
         if (auditChannel?.isTextBased()) {
           const msg = await (auditChannel as TextChannel).messages.fetch(elevation.auditMessageId);
+          await msg.edit({ components: [] });
+        }
+      } catch {
+        // Non-fatal — message may have been deleted
+      }
+    }
+
+    // Remove the Extend Session button from the expiry warning message (if one was posted).
+    // This message is separate from alertMessageId/auditMessageId — it is the warning post
+    // created by runWarningScan and stored as warningMessageId.
+    if (config?.alertChannelId && elevation.warningMessageId) {
+      try {
+        const alertChannel = await client.channels.fetch(config.alertChannelId) as TextChannel;
+        if (alertChannel?.isTextBased()) {
+          const msg = await (alertChannel as TextChannel).messages.fetch(elevation.warningMessageId);
           await msg.edit({ components: [] });
         }
       } catch {
