@@ -1,6 +1,7 @@
 import { AuditEventType, Prisma } from "@prisma/client";
 import { Client, TextChannel } from "discord.js";
 import { db } from "./database";
+import { buildAuditLogEmbed } from "./embeds";
 
 interface AuditParams {
   guildId: string;
@@ -35,11 +36,9 @@ export async function writeAuditLog(client: Client, params: AuditParams): Promis
     try {
       const channel = await client.channels.fetch(config.auditChannelId) as TextChannel;
       if (channel?.isTextBased()) {
-        const emoji = eventTypeEmoji(params.eventType);
-        const rolePart = params.roleName ? ` | Role: **${params.roleName}**` : "";
-        await channel.send(
-          `${emoji} \`${params.eventType}\` — <@${params.discordUserId}>${rolePart} — <t:${Math.floor(log.createdAt.getTime() / 1000)}:R>`
-        );
+        await channel.send({
+          embeds: [buildAuditLogEmbed(params.eventType, params.discordUserId, log.createdAt, params.roleName)],
+        });
       }
     } catch {
       // Non-fatal — audit DB record already written

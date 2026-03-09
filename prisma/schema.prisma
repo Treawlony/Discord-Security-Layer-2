@@ -82,8 +82,11 @@ model ActiveElevation {
   // Set when the expiry warning message is posted; cleared on session extension so warning re-fires
   notifiedAt      DateTime?
   // Discord message IDs of the elevation-granted posts, stored so buttons can be disabled when the session ends
-  alertMessageId  String?
-  auditMessageId  String?
+  alertMessageId   String?
+  auditMessageId   String?
+  // Discord message ID of the expiry warning post in the alert channel, stored so the Extend Session button
+  // can be removed when the session ends by any path (expiry, self-revoke, admin revoke)
+  warningMessageId String?
 
   pimUser PimUser @relation(fields: [pimUserId], references: [id], onDelete: Cascade)
 

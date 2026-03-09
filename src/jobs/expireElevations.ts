@@ -8,6 +8,7 @@ import {
 } from "discord.js";
 import { db } from "../lib/database";
 import { writeAuditLog } from "../lib/audit";
+import { buildExpiryWarningAlertEmbed, buildExpiryWarningAuditEmbed } from "../lib/embeds";
 
 export function startExpiryJob(client: Client): ScheduledTask {
   // Run every minute to check for expiry warnings and expired elevations.
@@ -39,7 +40,9 @@ async function runWarningScan(client: Client): Promise<void> {
 
   for (const config of configs) {
     const now = new Date();
-    const windowEnd = new Date(now.getTime() + config.notifyBeforeSec * 1000);
+    // Extend the window by one cron interval (60s) to avoid missing sessions
+    // that fall just outside the window at one tick and get caught too late.
+    const windowEnd = new Date(now.getTime() + (config.notifyBeforeSec + 60) * 1000);
 
     const toWarn = await db.activeElevation.findMany({
       where: {
@@ -58,8 +61,6 @@ async function runWarningScan(client: Client): Promise<void> {
         data: { notifiedAt: new Date() },
       });
 
-      const expiryUnix = Math.floor(elevation.expiresAt.getTime() / 1000);
-
       // Alert channel — user-facing ping with Extend Session button.
       if (config.alertChannelId) {
         try {
@@ -72,11 +73,23 @@ async function runWarningScan(client: Client): Promise<void> {
 
             const row = new ActionRowBuilder<ButtonBuilder>().addComponents(extendButton);
 
-            await alertChannel.send({
-              content:
-                `⏰ <@${elevation.pimUser.discordUserId}>, your **${elevation.roleName}** elevation expires ` +
-                `<t:${expiryUnix}:R>. Click **Extend Session** to reset your timer.`,
+            // content: ping is required — <@userId> inside an embed description does NOT
+            // trigger a Discord notification. Only the message content field sends a ping.
+            const warningMsg = await alertChannel.send({
+              content: `<@${elevation.pimUser.discordUserId}>`,
+              embeds: [buildExpiryWarningAlertEmbed(
+                elevation.pimUser.discordUserId,
+                elevation.roleName,
+                elevation.expiresAt
+              )],
               components: [row],
+            });
+
+            // Store the warning message ID so any session-ending path can remove
+            // the Extend Session button when the session is no longer active.
+            await db.activeElevation.update({
+              where: { id: elevation.id },
+              data: { warningMessageId: warningMsg.id },
             });
           }
         } catch (err) {
@@ -89,9 +102,13 @@ async function runWarningScan(client: Client): Promise<void> {
         try {
           const auditChannel = await client.channels.fetch(config.auditChannelId) as TextChannel;
           if (auditChannel?.isTextBased()) {
-            await auditChannel.send(
-              `⏰ **Expiry Warning** — <@${elevation.pimUser.discordUserId}>'s **${elevation.roleName}** elevation expires <t:${expiryUnix}:R>.`
-            );
+            await auditChannel.send({
+              embeds: [buildExpiryWarningAuditEmbed(
+                elevation.pimUser.discordUserId,
+                elevation.roleName,
+                elevation.expiresAt
+              )],
+            });
           }
         } catch (err) {
           console.error(`[Jobs] Warning scan: failed to post to audit channel for guild ${config.guildId}`, err);
@@ -167,6 +184,21 @@ async function runExpiryScan(client: Client): Promise<void> {
         const auditChannel = await client.channels.fetch(config.auditChannelId) as TextChannel;
         if (auditChannel?.isTextBased()) {
           const msg = await (auditChannel as TextChannel).messages.fetch(elevation.auditMessageId);
+          await msg.edit({ components: [] });
+        }
+      } catch {
+        // Non-fatal — message may have been deleted
+      }
+    }
+
+    // Remove the Extend Session button from the expiry warning message (if one was posted).
+    // This message is separate from alertMessageId/auditMessageId — it is the warning post
+    // created by runWarningScan and stored as warningMessageId.
+    if (config?.alertChannelId && elevation.warningMessageId) {
+      try {
+        const alertChannel = await client.channels.fetch(config.alertChannelId) as TextChannel;
+        if (alertChannel?.isTextBased()) {
+          const msg = await (alertChannel as TextChannel).messages.fetch(elevation.warningMessageId);
           await msg.edit({ components: [] });
         }
       } catch {

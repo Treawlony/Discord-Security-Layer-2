@@ -10,6 +10,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.1.0] — 2026-03-09
+
+### Added
+
+- **Rich embed notifications** (`src/lib/embeds.ts`, new) — all Discord channel-posted messages (audit log, elevation-granted, expiry warning, session-end edits) now use Discord `EmbedBuilder` embeds instead of plain-text strings. Embeds render `<@userId>` as a clickable mention without triggering a notification ping, restoring readable user references across all channel messages.
+  - New shared embed builder module `src/lib/embeds.ts` with 9 exported pure builder functions and 4 colour constants.
+  - Colour semantics: green (`0x57F287`) for granted/active/extended events, orange (`0xFEE75C`) for warnings, red (`0xED4245`) for revokes/blocks, grey (`0x95A5A6`) for neutral/ended events.
+  - Every embed includes a Discord footer timestamp (`.setTimestamp()`).
+- **`warningMessageId` on `ActiveElevation`** — new nullable `String?` field stores the Discord message ID of the expiry warning posted to the alert channel. This allows all session-ending paths to remove the "Extend Session" button when the session is no longer active.
+
+### Changed
+
+- **`src/lib/audit.ts`** — default audit channel post changed from a plain-text `channel.send(string)` to `channel.send({ embeds: [buildAuditLogEmbed(...)] })`. The `skipChannelPost` flag and DB write behaviour are unchanged.
+- **`src/commands/user/elevate.ts`** — elevation-granted messages to the audit channel and alert channel now send embeds instead of plain-text content strings. Buttons remain attached via `components`. `auditMessageId` / `alertMessageId` storage is unchanged.
+- **`src/jobs/expireElevations.ts`** — expiry warning sends to both alert and audit channels now use embeds. Expiry scan message edits (`components: []` to strip buttons) are unchanged — the embed body is preserved in place by Discord when only components are updated. Warning scan window extended by one cron interval (60 s) to prevent sessions from being missed when their `expiresAt` falls just outside the window at one tick.
+- **`src/lib/buttonHandlers.ts`** — session-end message edits now replace the original embed with a contextual state embed:
+  - `handleExtendSession`: expiry-warning message edited with a green "Session Extended" embed; `content` field carries `<@userId>` to notify the user.
+  - `handleSelfRevoke`: audit message edited with a grey "Session Self-Revoked" embed.
+  - `handleRemovePerm`: audit message edited with a red "Permission Removed" embed.
+  - `handleRemovePermBlock`: audit message edited with a red "Permission Removed and User Blocked" embed.
+  - All edits include `content: ""` to clear any stale plain-text from pre-v1.1.0 messages (except `handleExtendSession` — see above).
+  - All session-ending paths now also clear the "Extend Session" button from the expiry warning message via `warningMessageId`.
+
+### Fixed
+
+- **Expiry warning ping** — the alert channel expiry warning now includes `content: <@userId>` so the user receives a Discord notification. Previously the mention was only inside the embed body, which does not trigger a ping.
+- **Stale "Extend Session" button** — the expiry warning message in the alert channel is now updated to remove its "Extend Session" button whenever a session ends (natural expiry, self-revoke, admin revoke, admin revoke + block). Previously the button remained active after the session had ended.
+- **Notification timing drift** — the warning scan window is now extended by one cron interval so sessions whose `expiresAt` falls just past the window edge at one tick are not silently deferred to the next tick (up to 60 s late).
+
+### Migration
+
+- `prisma/migrations/20260309000003_add_warning_message_id/migration.sql` — additive only:
+  - `"warningMessageId" TEXT` (nullable) on `active_elevations`
+
+---
+
 ## [1.0.0] — 2026-03-09
 
 This is the first stable production release of Discord Watchtower. The core PIM flow, admin tooling, audit infrastructure, and operational hardening features have been developed and validated across the v0.0.x–v0.4.x series. v1.0.0 represents the point at which the feature set is considered complete and production-ready for multi-guild deployment.

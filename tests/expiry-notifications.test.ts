@@ -388,13 +388,18 @@ describe("handleSelfRevoke — session-only revocation (Bug 1 regression)", () =
   const fs = require("fs");
   const path = require("path");
   const src = path.resolve(__dirname, "../src/lib/buttonHandlers.ts");
+  // embeds.ts holds the "Session Self-Revoked" / "eligibility intact" strings now
+  // (moved there as part of the embed-notification refactor, EPIC-006).
+  const embedsSrc = path.resolve(__dirname, "../src/lib/embeds.ts");
   let selfRevokeFn: string;
+  let embedsSource: string;
 
   beforeAll(() => {
     const source: string = fs.readFileSync(src, "utf-8");
     const fnStart = source.indexOf("export async function handleSelfRevoke");
     const fnEnd = source.indexOf("\n// ---------------------------------------------------------------------------\n// handleRemovePerm");
     selfRevokeFn = source.slice(fnStart, fnEnd);
+    embedsSource = fs.readFileSync(embedsSrc, "utf-8");
   });
 
   it("exports handleSelfRevoke", () => {
@@ -443,8 +448,11 @@ describe("handleSelfRevoke — session-only revocation (Bug 1 regression)", () =
   });
 
   it("audit message content tells admins the session was self-revoked and eligibility is intact", () => {
-    expect(selfRevokeFn).toContain("Session Self-Revoked");
-    expect(selfRevokeFn).toContain("eligibility intact");
+    // The strings live in embeds.ts (buildSelfRevokedAuditEmbed) and are called from
+    // handleSelfRevoke via the function reference — check both files.
+    const combinedSource = selfRevokeFn + embedsSource;
+    expect(combinedSource).toContain("Session Self-Revoked");
+    expect(combinedSource).toContain("eligibility intact");
   });
 
   it("audit message buttons are also removed (components: [])", () => {
@@ -899,5 +907,185 @@ describe("Warning scan eligibility logic", () => {
     // If session is 300s (5 min) and warning window is 600s (10 min), elevation is already in window
     const expiresAt = new Date(NOW.getTime() + 300 * 1000); // 300s session
     expect(isInWarningWindow(expiresAt, NOW, 600)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 12: BUG-001 regression — expiry warning ping fires in content field
+// ---------------------------------------------------------------------------
+
+describe("BUG-001 regression — expiry warning ping in content field", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const src = path.resolve(__dirname, "../src/jobs/expireElevations.ts");
+  let source: string;
+
+  beforeAll(() => {
+    source = fs.readFileSync(src, "utf-8");
+  });
+
+  it("warning scan alertChannel.send includes content field with user ping", () => {
+    // <@userId> in an embed description does NOT trigger a Discord notification.
+    // The ping must live in the content field of the message so Discord notifies the user.
+    expect(source).toContain("content: `<@${elevation.pimUser.discordUserId}>`");
+  });
+
+  it("warning scan stores the returned message object from alertChannel.send", () => {
+    // The message must be captured so its ID can be stored on the DB record.
+    expect(source).toContain("const warningMsg = await alertChannel.send(");
+  });
+
+  it("warning scan saves warningMessageId on the ActiveElevation record", () => {
+    expect(source).toContain("warningMessageId: warningMsg.id");
+  });
+
+  it("audit channel send has no content field (admin-facing, no ping intended)", () => {
+    // Find the audit channel send block and confirm no content field alongside the audit embed.
+    const auditSendIdx = source.indexOf("embeds: [buildExpiryWarningAuditEmbed(");
+    const window = source.slice(Math.max(0, auditSendIdx - 100), auditSendIdx + 200);
+    expect(window).not.toContain("content: `<@");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 13: BUG-002 regression — stale Extend Session button cleared on session end
+// ---------------------------------------------------------------------------
+
+describe("BUG-002 regression — Extend Session button cleared on all session-end paths", () => {
+  const fs = require("fs");
+  const path = require("path");
+
+  describe("Prisma schema — warningMessageId field", () => {
+    let schema: string;
+
+    beforeAll(() => {
+      schema = fs.readFileSync(path.resolve(__dirname, "../prisma/schema.prisma"), "utf-8");
+    });
+
+    it("ActiveElevation has warningMessageId as nullable String", () => {
+      expect(schema).toContain("warningMessageId");
+    });
+
+    it("warningMessageId is optional (String?)", () => {
+      const idx = schema.indexOf("warningMessageId");
+      const snippet = schema.slice(idx, idx + 30);
+      expect(snippet).toContain("String?");
+    });
+  });
+
+  describe("Migration SQL — add_warning_message_id", () => {
+    const migrationPath = require("path").resolve(
+      __dirname,
+      "../prisma/migrations/20260309000003_add_warning_message_id/migration.sql"
+    );
+
+    it("migration file exists", () => {
+      expect(require("fs").existsSync(migrationPath)).toBe(true);
+    });
+
+    it("uses camelCase warningMessageId (not snake_case warning_message_id)", () => {
+      const sql: string = require("fs").readFileSync(migrationPath, "utf-8");
+      expect(sql).toContain('"warningMessageId"');
+      expect(sql).not.toContain("warning_message_id");
+    });
+
+    it("does not use DROP TABLE or TRUNCATE", () => {
+      const sql: string = require("fs").readFileSync(migrationPath, "utf-8");
+      const upper = sql.toUpperCase();
+      expect(upper).not.toContain("DROP TABLE");
+      expect(upper).not.toContain("TRUNCATE");
+    });
+  });
+
+  describe("expireElevations.ts — runExpiryScan clears warning message", () => {
+    let expiryScanText: string;
+
+    beforeAll(() => {
+      const source: string = require("fs").readFileSync(
+        require("path").resolve(__dirname, "../src/jobs/expireElevations.ts"), "utf-8"
+      );
+      const start = source.indexOf("async function runExpiryScan");
+      expiryScanText = source.slice(start);
+    });
+
+    it("expiry scan checks elevation.warningMessageId before editing", () => {
+      expect(expiryScanText).toContain("elevation.warningMessageId");
+    });
+
+    it("expiry scan edits warning message with components: []", () => {
+      // The warning message edit block uses the same pattern as alertMessageId/auditMessageId
+      const warnIdx = expiryScanText.indexOf("warningMessageId");
+      const snippet = expiryScanText.slice(warnIdx, warnIdx + 600);
+      expect(snippet).toContain("components: []");
+    });
+
+    it("expiry scan wraps warning message edit in try/catch (non-fatal)", () => {
+      const warnIdx = expiryScanText.indexOf("warningMessageId");
+      const snippet = expiryScanText.slice(warnIdx, warnIdx + 700);
+      expect(snippet).toContain("} catch {");
+    });
+  });
+
+  describe("buttonHandlers.ts — all session-ending handlers clear warning message", () => {
+    let source: string;
+
+    beforeAll(() => {
+      source = require("fs").readFileSync(
+        require("path").resolve(__dirname, "../src/lib/buttonHandlers.ts"), "utf-8"
+      );
+    });
+
+    it("handleSelfRevoke checks elevation.warningMessageId", () => {
+      const fnStart = source.indexOf("export async function handleSelfRevoke");
+      const fnEnd = source.indexOf("\n// ---------------------------------------------------------------------------\n// handleRemovePerm");
+      const fn = source.slice(fnStart, fnEnd);
+      expect(fn).toContain("warningMessageId");
+    });
+
+    it("handleSelfRevoke edits warning message with components: []", () => {
+      const fnStart = source.indexOf("export async function handleSelfRevoke");
+      const fnEnd = source.indexOf("\n// ---------------------------------------------------------------------------\n// handleRemovePerm");
+      const fn = source.slice(fnStart, fnEnd);
+      const warnIdx = fn.indexOf("warningMessageId");
+      const snippet = fn.slice(warnIdx, warnIdx + 600);
+      expect(snippet).toContain("components: []");
+    });
+
+    it("handleRemovePerm checks elevation.warningMessageId", () => {
+      const fnStart = source.indexOf("export async function handleRemovePerm(");
+      const fnEnd = source.indexOf("\nexport async function handleRemovePermBlock");
+      const fn = source.slice(fnStart, fnEnd);
+      expect(fn).toContain("warningMessageId");
+    });
+
+    it("handleRemovePerm edits warning message with components: []", () => {
+      const fnStart = source.indexOf("export async function handleRemovePerm(");
+      const fnEnd = source.indexOf("\nexport async function handleRemovePermBlock");
+      const fn = source.slice(fnStart, fnEnd);
+      const warnIdx = fn.indexOf("warningMessageId");
+      const snippet = fn.slice(warnIdx, warnIdx + 600);
+      expect(snippet).toContain("components: []");
+    });
+
+    it("handleRemovePermBlock checks elevation.warningMessageId", () => {
+      const fnStart = source.indexOf("export async function handleRemovePermBlock");
+      const fn = source.slice(fnStart);
+      expect(fn).toContain("warningMessageId");
+    });
+
+    it("handleRemovePermBlock edits warning message with components: []", () => {
+      const fnStart = source.indexOf("export async function handleRemovePermBlock");
+      const fn = source.slice(fnStart);
+      const warnIdx = fn.indexOf("warningMessageId");
+      const snippet = fn.slice(warnIdx, warnIdx + 600);
+      expect(snippet).toContain("components: []");
+    });
+
+    it("all warning message edits are wrapped in try/catch (non-fatal)", () => {
+      // Each of the three handlers adds one try/catch for warning message cleanup
+      // Count total try/catch blocks — should be at least 3 more than before (was 3+, now 6+)
+      const tryCatchCount = (source.match(/} catch \{/g) ?? []).length;
+      expect(tryCatchCount).toBeGreaterThanOrEqual(6);
+    });
   });
 });
