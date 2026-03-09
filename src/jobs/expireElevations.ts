@@ -39,7 +39,9 @@ async function runWarningScan(client: Client): Promise<void> {
 
   for (const config of configs) {
     const now = new Date();
-    const windowEnd = new Date(now.getTime() + config.notifyBeforeSec * 1000);
+    // Extend the window by one cron interval (60s) to avoid missing sessions
+    // that fall just outside the window at one tick and get caught too late.
+    const windowEnd = new Date(now.getTime() + (config.notifyBeforeSec + 60) * 1000);
 
     const toWarn = await db.activeElevation.findMany({
       where: {
