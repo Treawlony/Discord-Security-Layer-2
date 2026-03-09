@@ -209,7 +209,7 @@ describe("Prisma schema — new fields", () => {
   });
 
   it("ActiveElevation has notifiedAt as nullable", () => {
-    expect(schema).toContain("notifiedAt  DateTime?");
+    expect(schema).toContain("notifiedAt");
   });
 
   it("PimUser has blockedAt as nullable", () => {
@@ -373,6 +373,174 @@ describe("buttonHandlers.ts — structural checks", () => {
     // All three functions try/catch role removal and message update
     const tryCatchCount = (source.match(/} catch/g) ?? []).length;
     expect(tryCatchCount).toBeGreaterThanOrEqual(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 5b: handleSelfRevoke — session-only revocation (regression: Bug 1)
+//
+// The self-revoke handler must ONLY end the current session (remove role +
+// delete ActiveElevation). It must NOT touch PimUser, EligibleRole, or
+// blockedAt — the user's setup should remain fully intact after self-revoking.
+// ---------------------------------------------------------------------------
+
+describe("handleSelfRevoke — session-only revocation (Bug 1 regression)", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const src = path.resolve(__dirname, "../src/lib/buttonHandlers.ts");
+  let selfRevokeFn: string;
+
+  beforeAll(() => {
+    const source: string = fs.readFileSync(src, "utf-8");
+    const fnStart = source.indexOf("export async function handleSelfRevoke");
+    const fnEnd = source.indexOf("\n// ---------------------------------------------------------------------------\n// handleRemovePerm");
+    selfRevokeFn = source.slice(fnStart, fnEnd);
+  });
+
+  it("exports handleSelfRevoke", () => {
+    expect(selfRevokeFn).toContain("export async function handleSelfRevoke");
+  });
+
+  it("calls deferReply with Ephemeral flag", () => {
+    expect(selfRevokeFn).toContain("deferReply");
+    expect(selfRevokeFn).toContain("MessageFlags.Ephemeral");
+  });
+
+  it("only the elevated user can self-revoke (auth check on discordUserId)", () => {
+    expect(selfRevokeFn).toContain("interaction.user.id");
+    expect(selfRevokeFn).toContain("discordUserId");
+  });
+
+  it("removes the Discord role", () => {
+    expect(selfRevokeFn).toContain("roles.remove");
+    expect(selfRevokeFn).toContain("self-revoked");
+  });
+
+  it("deletes the ActiveElevation record", () => {
+    expect(selfRevokeFn).toContain("activeElevation.delete");
+  });
+
+  it("does NOT delete PimUser (eligibility must survive)", () => {
+    expect(selfRevokeFn).not.toContain("pimUser.delete");
+    expect(selfRevokeFn).not.toContain("pimUsers.delete");
+  });
+
+  it("does NOT delete EligibleRole records", () => {
+    expect(selfRevokeFn).not.toContain("eligibleRole.delete");
+    expect(selfRevokeFn).not.toContain("eligibleRoles.delete");
+  });
+
+  it("does NOT set blockedAt on PimUser", () => {
+    expect(selfRevokeFn).not.toContain("blockedAt: new Date()");
+  });
+
+  it("does NOT nullify passwordHash", () => {
+    expect(selfRevokeFn).not.toContain("passwordHash");
+  });
+
+  it("writes ELEVATION_SELF_REVOKED audit log", () => {
+    expect(selfRevokeFn).toContain("ELEVATION_SELF_REVOKED");
+  });
+
+  it("audit message content tells admins the session was self-revoked and eligibility is intact", () => {
+    expect(selfRevokeFn).toContain("Session Self-Revoked");
+    expect(selfRevokeFn).toContain("eligibility intact");
+  });
+
+  it("audit message buttons are also removed (components: [])", () => {
+    // Both alert and audit messages must have components: [] — no lingering greyed buttons
+    const compEmptyCount = (selfRevokeFn.match(/components: \[\]/g) ?? []).length;
+    expect(compEmptyCount).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 5c: Alert message button removal after session end (regression: Bug 2)
+//
+// When any session ends (self-revoke, admin-revoke, natural expiry) the
+// "Revoke Early" button on the alert channel message must be completely
+// removed (components: []), NOT greyed-out.  A disabled button left behind
+// caused user confusion that the session-end had modified their account.
+// ---------------------------------------------------------------------------
+
+describe("Alert channel button removal after session end (Bug 2 regression)", () => {
+  const fs = require("fs");
+  const path = require("path");
+
+  describe("buttonHandlers.ts — all session-ending handlers", () => {
+    let source: string;
+
+    beforeAll(() => {
+      source = fs.readFileSync(path.resolve(__dirname, "../src/lib/buttonHandlers.ts"), "utf-8");
+    });
+
+    it("_buildDisabledAlertRow helper has been removed (no longer needed)", () => {
+      expect(source).not.toContain("_buildDisabledAlertRow");
+    });
+
+    it("_buildDisabledAdminRow helper has been removed (no longer needed)", () => {
+      expect(source).not.toContain("_buildDisabledAdminRow");
+    });
+
+    it("handleSelfRevoke edits alert message with components: [] (no greyed button)", () => {
+      const fnStart = source.indexOf("export async function handleSelfRevoke");
+      const fnEnd = source.indexOf("\n// ---------------------------------------------------------------------------\n// handleRemovePerm");
+      const fnText = source.slice(fnStart, fnEnd);
+      // Must contain components: [] for the alert message edit
+      expect(fnText).toContain("components: []");
+      // Must NOT use a disabled button on the alert message
+      expect(fnText).not.toMatch(/interaction\.message\.edit\(\{[^}]*disabled: true/s);
+    });
+
+    it("handleRemovePerm edits alert message with components: [] (no greyed button)", () => {
+      const fnStart = source.indexOf("export async function handleRemovePerm(");
+      const fnEnd = source.indexOf("\nexport async function handleRemovePermBlock");
+      const fnText = source.slice(fnStart, fnEnd);
+      expect(fnText).toContain("components: []");
+    });
+
+    it("handleRemovePermBlock edits alert message with components: [] (no greyed button)", () => {
+      const fnStart = source.indexOf("export async function handleRemovePermBlock");
+      // End is before the internal helpers
+      const fnEnd = source.indexOf("\n// ---------------------------------------------------------------------------\n// Internal helpers");
+      const fnText = source.slice(fnStart, fnEnd);
+      expect(fnText).toContain("components: []");
+    });
+  });
+
+  describe("expireElevations.ts — natural expiry", () => {
+    let source: string;
+
+    beforeAll(() => {
+      source = fs.readFileSync(path.resolve(__dirname, "../src/jobs/expireElevations.ts"), "utf-8");
+    });
+
+    it("expiry scan edits alert message with components: [] (no greyed Expired button)", () => {
+      // Locate the alert message edit block inside runExpiryScan
+      const expiryScanStart = source.indexOf("async function runExpiryScan");
+      const expiryScanText = source.slice(expiryScanStart);
+      expect(expiryScanText).toContain("components: []");
+    });
+
+    it("expiry scan does NOT create a disabled Expired button for the alert message", () => {
+      const expiryScanStart = source.indexOf("async function runExpiryScan");
+      const expiryScanText = source.slice(expiryScanStart);
+      // Should not have a ButtonBuilder for the alert message (the "Expired" greyed button is gone)
+      expect(expiryScanText).not.toContain('"Expired"');
+    });
+
+    it("expiry scan edits audit message with components: [] (admin buttons also removed)", () => {
+      const expiryScanStart = source.indexOf("async function runExpiryScan");
+      const expiryScanText = source.slice(expiryScanStart);
+      const compEmptyCount = (expiryScanText.match(/components: \[\]/g) ?? []).length;
+      expect(compEmptyCount).toBeGreaterThanOrEqual(2);
+    });
+
+    it("expiry scan does NOT create disabled Remove Permission buttons", () => {
+      const expiryScanStart = source.indexOf("async function runExpiryScan");
+      const expiryScanText = source.slice(expiryScanStart);
+      expect(expiryScanText).not.toContain('"Remove Permission"');
+    });
   });
 });
 

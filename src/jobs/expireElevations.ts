@@ -145,5 +145,32 @@ async function runExpiryScan(client: Client): Promise<void> {
       roleId: elevation.roleId,
       roleName: elevation.roleName,
     });
+
+    // Disable buttons on the elevation-granted messages so they cannot be interacted with after expiry.
+    const config = await db.guildConfig.findUnique({ where: { guildId: elevation.guildId } });
+
+    if (config?.alertChannelId && elevation.alertMessageId) {
+      try {
+        const alertChannel = await client.channels.fetch(config.alertChannelId) as TextChannel;
+        if (alertChannel?.isTextBased()) {
+          const msg = await (alertChannel as TextChannel).messages.fetch(elevation.alertMessageId);
+          await msg.edit({ components: [] });
+        }
+      } catch {
+        // Non-fatal — message may have been deleted
+      }
+    }
+
+    if (config?.auditChannelId && elevation.auditMessageId) {
+      try {
+        const auditChannel = await client.channels.fetch(config.auditChannelId) as TextChannel;
+        if (auditChannel?.isTextBased()) {
+          const msg = await (auditChannel as TextChannel).messages.fetch(elevation.auditMessageId);
+          await msg.edit({ components: [] });
+        }
+      } catch {
+        // Non-fatal — message may have been deleted
+      }
+    }
   }
 }

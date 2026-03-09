@@ -201,6 +201,9 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     const freshConfig = await getOrCreateGuildConfig(guildId);
     const expiryUnix = Math.floor(expiresAt.getTime() / 1000);
 
+    let auditMessageId: string | undefined;
+    let alertMessageId: string | undefined;
+
     // Audit channel — admin-facing log with Remove Permission / Remove Permission and Block buttons.
     if (freshConfig.auditChannelId) {
       try {
@@ -221,28 +224,53 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
             removeBlockBtn
           );
 
-          await auditChannel.send({
+          const auditMsg = await auditChannel.send({
             content:
               `⬆️ **PIM Elevation** — <@${discordUserId}> has been granted **${eligible.roleName}** until <t:${expiryUnix}:R>`,
             components: [adminRow],
           });
+          auditMessageId = auditMsg.id;
         }
       } catch (err) {
         console.error("[elevate] Failed to post to audit channel:", err);
       }
     }
 
-    // Alert channel — user-facing ping, no admin buttons.
+    // Alert channel — user-facing ping with a self-revoke button.
     if (freshConfig.alertChannelId) {
       try {
         const alertChannel = await client.channels.fetch(freshConfig.alertChannelId) as TextChannel;
         if (alertChannel?.isTextBased()) {
-          await alertChannel.send(
-            `⬆️ <@${discordUserId}>, you have been granted **${eligible.roleName}** until <t:${expiryUnix}:R>.`
-          );
+          const selfRevokeBtn = new ButtonBuilder()
+            .setCustomId(`self_revoke:${elevation.id}`)
+            .setLabel("Revoke Early")
+            .setStyle(ButtonStyle.Secondary);
+
+          const alertRow = new ActionRowBuilder<ButtonBuilder>().addComponents(selfRevokeBtn);
+
+          const alertMsg = await alertChannel.send({
+            content: `⬆️ <@${discordUserId}>, you have been granted **${eligible.roleName}** until <t:${expiryUnix}:R>.`,
+            components: [alertRow],
+          });
+          alertMessageId = alertMsg.id;
         }
       } catch (err) {
         console.error("[elevate] Failed to post to alert channel:", err);
+      }
+    }
+
+    // Persist message IDs so sessions endings can disable the buttons.
+    if (auditMessageId || alertMessageId) {
+      try {
+        await db.activeElevation.update({
+          where: { id: elevation.id },
+          data: {
+            auditMessageId: auditMessageId ?? null,
+            alertMessageId: alertMessageId ?? null,
+          },
+        });
+      } catch (err) {
+        console.error("[elevate] Failed to store message IDs on elevation:", err);
       }
     }
 

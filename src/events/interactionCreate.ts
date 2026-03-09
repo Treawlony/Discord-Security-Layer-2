@@ -3,6 +3,7 @@ import {
   handleExtendSession,
   handleRemovePerm,
   handleRemovePermBlock,
+  handleSelfRevoke,
 } from "../lib/buttonHandlers";
 
 export async function onInteractionCreate(client: Client, interaction: Interaction): Promise<void> {
@@ -15,6 +16,8 @@ export async function onInteractionCreate(client: Client, interaction: Interacti
     try {
       if (customId.startsWith("extend_session:")) {
         await handleExtendSession(btn, client);
+      } else if (customId.startsWith("self_revoke:")) {
+        await handleSelfRevoke(btn, client);
       } else if (customId.startsWith("remove_perm_block:")) {
         await handleRemovePermBlock(btn, client);
       } else if (customId.startsWith("remove_perm:")) {

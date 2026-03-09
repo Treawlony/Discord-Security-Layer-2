@@ -3,8 +3,8 @@
  *
  * All durations are represented in seconds internally. The user-facing format
  * is a number followed by a unit suffix: "s" (seconds), "m" (minutes), "h"
- * (hours), or "d" (days). The special string "0" is accepted as a way to
- * disable a feature (e.g. notify-before).
+ * (hours), or "d" (days). A bare number with no suffix is assumed to be
+ * minutes. The special string "0" disables a feature (e.g. notify-before).
  *
  * Single-unit input only — compound strings like "1h30m" are not supported.
  */
@@ -20,6 +20,7 @@ const UNIT_TO_SECONDS: Record<string, number> = {
  * Parse a human-readable duration string into a number of seconds.
  *
  * Accepted formats:
+ *   "30"   → 1800  (bare number — assumed to be minutes)
  *   "30s"  → 30
  *   "30m"  → 1800
  *   "2h"   → 7200
@@ -34,6 +35,15 @@ export function parseDuration(input: string): number | null {
   // Special case: bare "0" means "disabled" (e.g. for notify-before)
   if (trimmed === "0") {
     return 0;
+  }
+
+  // Bare number with no unit suffix — treated as minutes
+  if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+    const seconds = parseFloat(trimmed) * 60;
+    if (!isFinite(seconds) || seconds < 0 || !Number.isInteger(seconds)) {
+      return null;
+    }
+    return seconds;
   }
 
   const match = trimmed.match(/^(\d+(?:\.\d+)?)(s|m|h|d)$/i);
