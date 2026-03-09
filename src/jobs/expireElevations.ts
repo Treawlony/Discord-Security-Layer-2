@@ -90,7 +90,7 @@ async function runWarningScan(client: Client): Promise<void> {
           const auditChannel = await client.channels.fetch(config.auditChannelId) as TextChannel;
           if (auditChannel?.isTextBased()) {
             await auditChannel.send(
-              `⏰ **Expiry Warning** — <@${elevation.pimUser.discordUserId}>'s **${elevation.roleName}** elevation expires <t:${expiryUnix}:R>.`
+              `⏰ **Expiry Warning** — \`${elevation.pimUser.discordUserId}\`'s **${elevation.roleName}** elevation expires <t:${expiryUnix}:R>.`
             );
           }
         } catch (err) {

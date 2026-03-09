@@ -38,7 +38,7 @@ export async function writeAuditLog(client: Client, params: AuditParams): Promis
         const emoji = eventTypeEmoji(params.eventType);
         const rolePart = params.roleName ? ` | Role: **${params.roleName}**` : "";
         await channel.send(
-          `${emoji} \`${params.eventType}\` — <@${params.discordUserId}>${rolePart} — <t:${Math.floor(log.createdAt.getTime() / 1000)}:R>`
+          `${emoji} \`${params.eventType}\` — \`${params.discordUserId}\`${rolePart} — <t:${Math.floor(log.createdAt.getTime() / 1000)}:R>`
         );
       }
     } catch {

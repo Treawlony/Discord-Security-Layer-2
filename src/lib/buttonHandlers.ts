@@ -171,7 +171,7 @@ export async function handleSelfRevoke(
       if (auditChannel?.isTextBased()) {
         const auditMsg = await auditChannel.messages.fetch(elevation.auditMessageId);
         await auditMsg.edit({
-          content: `↩️ **Session Self-Revoked** — <@${elevation.pimUser.discordUserId}>'s **${elevation.roleName}** session was ended early by the user. Role removed; eligibility intact.`,
+          content: `↩️ **Session Self-Revoked** — \`${elevation.pimUser.discordUserId}\`'s **${elevation.roleName}** session was ended early by the user. Role removed; eligibility intact.`,
           components: [],
         });
       }

@@ -238,7 +238,7 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
 
         const auditMsg = await auditChannel.send({
           content:
-            `⬆️ **PIM Elevation** — <@${discordUserId}> has been granted **${eligible.roleName}** until <t:${expiryUnix}:R>`,
+            `⬆️ **PIM Elevation** — \`${discordUserId}\` has been granted **${eligible.roleName}** until <t:${expiryUnix}:R>`,
           components: [adminRow],
         });
         auditMessageId = auditMsg.id;
@@ -261,7 +261,7 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
         const alertRow = new ActionRowBuilder<ButtonBuilder>().addComponents(selfRevokeBtn);
 
         const alertMsg = await alertChannel.send({
-          content: `⬆️ <@${discordUserId}>, you have been granted **${eligible.roleName}** until <t:${expiryUnix}:R>.`,
+          content: `⬆️ You have been granted **${eligible.roleName}** until <t:${expiryUnix}:R>.`,
           components: [alertRow],
         });
         alertMessageId = alertMsg.id;
