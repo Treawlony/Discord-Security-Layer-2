@@ -22,6 +22,7 @@ const ADMIN_COMMANDS = [
   "unlock",
   "config",
   "reset-password",
+  "audit",
 ];
 
 const ADMIN_DIR = path.resolve(__dirname, "../src/commands/admin");
@@ -162,7 +163,9 @@ describe("Assign command — warns when assigning eligibility for the admin role
   });
 
   it("returns a warning instead of assigning when admin role is targeted", () => {
-    expect(source).toContain("Warning:");
+    // The guard returns a "skipped" outcome with a descriptive reason string.
+    // "Warning:" was the v0.3 inline-reply form; v0.4 uses the per-role outcome model.
+    expect(source).toContain("this is the configured Watchtower Admin role");
   });
 });
 

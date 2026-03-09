@@ -16,6 +16,41 @@ import { verifyPassword } from "../../lib/crypto";
 import { writeAuditLog } from "../../lib/audit";
 import { getOrCreateGuildConfig } from "../../lib/guildConfig";
 
+// ---------------------------------------------------------------------------
+// Rate limiting — spam gate (distinct from the brute-force lockout mechanism)
+// ---------------------------------------------------------------------------
+const RATE_LIMIT_WINDOW_MS = 60_000;  // rolling window length
+const RATE_LIMIT_MAX_ATTEMPTS = 3;    // max invocations allowed within the window
+
+// Map key: `${guildId}:${userId}` — isolates per-guild so multi-guild users
+// are tracked independently. Values are arrays of invocation timestamps (ms).
+const elevateCooldowns = new Map<string, number[]>();
+
+function isRateLimited(key: string): boolean {
+  const now = Date.now();
+  const recent = (elevateCooldowns.get(key) ?? []).filter(
+    (ts) => now - ts < RATE_LIMIT_WINDOW_MS,
+  );
+
+  if (recent.length >= RATE_LIMIT_MAX_ATTEMPTS) {
+    // Rejected — update the map with the pruned list (no new timestamp added).
+    elevateCooldowns.set(key, recent);
+    return true;
+  }
+
+  // Allowed — record this attempt. Push before writing so a first-ever call
+  // (recent was []) sets the entry; a call where all prior timestamps expired
+  // (recent was also []) naturally replaces the stale entry with just one
+  // fresh timestamp, keeping the Map bounded over long process uptime.
+  recent.push(now);
+  elevateCooldowns.set(key, recent);
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Command definition
+// ---------------------------------------------------------------------------
+
 export const data = new SlashCommandBuilder()
   .setName("elevate")
   .setDescription("Request temporary elevation to one of your eligible roles.")
@@ -28,6 +63,15 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
 
   const guildId = interaction.guildId!;
   const discordUserId = interaction.user.id;
+
+  // Rate-limit check — before any DB access or password work
+  const rlKey = `${guildId}:${discordUserId}`;
+  if (isRateLimited(rlKey)) {
+    return interaction.editReply(
+      "You are sending commands too quickly. Please wait a moment before trying again."
+    );
+  }
+
   const password = interaction.options.getString("password", true);
 
   const config = await getOrCreateGuildConfig(guildId);

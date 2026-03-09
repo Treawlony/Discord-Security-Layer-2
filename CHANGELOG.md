@@ -10,6 +10,53 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.0] — 2026-03-09
+
+This is the first stable production release of Discord Watchtower. The core PIM flow, admin tooling, audit infrastructure, and operational hardening features have been developed and validated across the v0.0.x–v0.4.x series. v1.0.0 represents the point at which the feature set is considered complete and production-ready for multi-guild deployment.
+
+### Added
+
+- **Graceful shutdown** (`src/index.ts`, `src/jobs/expireElevations.ts`) — the bot now handles `SIGTERM` and `SIGINT` cleanly. On signal receipt the cron job is stopped, the Prisma client disconnects from PostgreSQL, and the Discord client is destroyed before `process.exit(0)`. A double-signal guard (`isShuttingDown`) prevents any of these steps from running twice if a second signal arrives before shutdown completes. This is the standard behaviour expected by Docker / Portainer during container stop or redeploy.
+
+- **Rate limiting on `/elevate`** (`src/commands/user/elevate.ts`) — a per-user, per-guild sliding-window rate limiter now gates the `/elevate` command. At most 3 invocations are allowed within any rolling 60-second window. Users who exceed the limit receive an ephemeral "slow down" reply; no audit log entry is written for the rejected attempt. The cooldown is tracked in-memory, keyed on `${guildId}:${userId}` to ensure full multi-guild isolation. This is distinct from the existing brute-force lockout mechanism — it protects the password-verification path from rapid-fire command spam without affecting the lockout counter.
+
+- **Bulk eligibility assignment** (`src/commands/admin/assign.ts`) — `/watchtower-assign` now accepts up to three roles in a single invocation (`role1` required, `role2` and `role3` optional). Each role is processed independently and idempotently: already-assigned roles are reported as "already assigned (no change)" without emitting a duplicate audit event; roles at or above the bot in the hierarchy or matching the configured Watchtower Admin role are reported as "skipped" with a reason. The reply lists per-role outcomes and a contextual footer. Passing the same role twice in a single invocation is handled (deduped before processing).
+
+- **`/watchtower-list` — Active Elevations section** (`src/commands/admin/list.ts`) — the list embed now includes a second section showing all currently active elevations for the server (or for a specific user when the `user:` filter is applied). Each entry shows the role name, the elevated user mention, and the expiry time as a relative Discord timestamp (`<t:...:R>`). Field budget: 20 fields for assignments, 5 for active elevations (total 25 — at Discord's embed field cap). Truncation is noted in the embed footer when limits are hit.
+
+- **`/watchtower-audit` command** (`src/commands/admin/audit.ts`) — new admin command for querying the PIM audit log directly from Discord, without needing database access.
+  - `/watchtower-audit user:@user [limit:N]` — shows the N most recent audit log entries for a specific user (default 10, max 25).
+  - `/watchtower-audit recent [limit:N]` — shows the N most recent entries across the entire server (default 10, max 25).
+  - Results are rendered as a Discord embed with per-entry fields showing the event type emoji, event name, timestamp, role (when applicable), and metadata summary.
+  - A 5500-character embed budget guard truncates the field list before the Discord 6000-character limit is hit; a footer note is shown when truncation occurs.
+  - Gated by `isWatchtowerAdmin()`. Guild-scoped queries only. No new DB schema required — reads from the existing `AuditLog` table.
+
+### Changed
+
+- **`/watchtower-assign` command description and options updated** — the command description now reads "Assign role eligibility to a user (up to 3 roles at once)" and the `role` option has been renamed to `role1` (required). `role2` and `role3` are new optional options. Existing single-role usage (`/watchtower-assign user:@u role1:@r`) works identically to before.
+
+- **`startExpiryJob` now returns `ScheduledTask`** (`src/jobs/expireElevations.ts`) — previously the job was fire-and-forget with no handle. The return value is now used by the shutdown handler to call `.stop()` before process exit, ensuring in-flight cron callbacks are not interrupted mid-execution.
+
+- **`eventTypeEmoji` promoted to named export** (`src/lib/audit.ts`) — was previously a module-private function. Now exported so `audit.ts` can reuse it without duplicating the emoji map.
+
+- **`/help` updated** — `/watchtower-audit` listed in Admin Commands with both subcommands described. `/watchtower-assign` description updated to reflect 3-role capability.
+
+### Fixed
+
+- Rate-limit cooldown map entries are automatically evicted for users whose timestamps have all expired, keeping the map bounded across long process uptime.
+
+### Migration
+
+No database migrations. All five features reuse the existing schema (`AuditLog`, `ActiveElevation`, `EligibleRole`, `PimUser`, `GuildConfig`) without any structural changes.
+
+### Discord Command Registration
+
+`/watchtower-audit` is a new global slash command. After deploying v1.0.0, global command propagation takes up to 1 hour. During this window the command may not appear in the Discord UI autocomplete; once propagated it is immediately usable. No manual registration step is needed — the bot re-registers all commands automatically on startup via the `ready` event.
+
+The `/watchtower-assign` option rename (`role` → `role1`) is a non-breaking Discord API change. The original `role` option will disappear from the UI after propagation; no existing slash command invocations are affected because the command must be re-invoked interactively.
+
+---
+
 ## [0.3.0] — 2026-03-09
 
 ### Added
