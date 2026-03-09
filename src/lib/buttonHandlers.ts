@@ -6,6 +6,7 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  TextChannel,
 } from "discord.js";
 import { db } from "./database";
 import { writeAuditLog } from "./audit";
@@ -94,6 +95,92 @@ export async function handleExtendSession(
 }
 
 // ---------------------------------------------------------------------------
+// handleSelfRevoke
+// customId: "self_revoke:<elevationId>"
+// Auth: only the elevated user themselves may click this button.
+// ---------------------------------------------------------------------------
+export async function handleSelfRevoke(
+  interaction: ButtonInteraction,
+  client: Client
+): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const elevationId = interaction.customId.slice("self_revoke:".length);
+
+  const elevation = await db.activeElevation.findUnique({
+    where: { id: elevationId },
+    include: { pimUser: true },
+  });
+
+  if (!elevation) {
+    await interaction.editReply({
+      content: "This elevation has already expired or been revoked.",
+    });
+    return;
+  }
+
+  if (interaction.guildId !== elevation.guildId) {
+    await interaction.editReply({
+      content: "This action cannot be performed in this server.",
+    });
+    return;
+  }
+
+  // Only the elevated user themselves may self-revoke.
+  if (interaction.user.id !== elevation.pimUser.discordUserId) {
+    await interaction.editReply({
+      content: "Only the elevated user can revoke their own session.",
+    });
+    return;
+  }
+
+  // Remove the Discord role — non-fatal if member has left the guild.
+  try {
+    const guild = await client.guilds.fetch(elevation.guildId);
+    const targetMember = await guild.members.fetch(elevation.pimUser.discordUserId);
+    await targetMember.roles.remove(elevation.roleId, "PIM elevation self-revoked by user");
+  } catch {
+    // Member may have left — proceed with DB cleanup
+  }
+
+  await db.activeElevation.delete({ where: { id: elevationId } });
+
+  await writeAuditLog(client, {
+    guildId: elevation.guildId,
+    discordUserId: elevation.pimUser.discordUserId,
+    pimUserId: elevation.pimUserId,
+    eventType: "ELEVATION_SELF_REVOKED",
+    roleId: elevation.roleId,
+    roleName: elevation.roleName,
+  });
+
+  // Disable the revoke button on the original alert channel message.
+  try {
+    await interaction.message.edit({ components: [_buildDisabledAlertRow(elevationId, "Revoked")] });
+  } catch {
+    // Non-fatal — original message may have been deleted
+  }
+
+  // Disable the admin buttons on the audit channel message.
+  const config = await getOrCreateGuildConfig(elevation.guildId);
+  if (config.auditChannelId && elevation.auditMessageId) {
+    try {
+      const auditChannel = await client.channels.fetch(config.auditChannelId) as TextChannel;
+      if (auditChannel?.isTextBased()) {
+        const auditMsg = await auditChannel.messages.fetch(elevation.auditMessageId);
+        await auditMsg.edit({ components: [_buildDisabledAdminRow(elevationId)] });
+      }
+    } catch {
+      // Non-fatal — message may have been deleted
+    }
+  }
+
+  await interaction.editReply({
+    content: `Your **${elevation.roleName}** elevation has been revoked.`,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // handleRemovePerm
 // customId: "remove_perm:<elevationId>"
 // Auth: Watchtower Admin only.
@@ -160,12 +247,24 @@ export async function handleRemovePerm(
     },
   });
 
-  // Disable both action buttons on the original elevation-granted message.
+  // Disable both action buttons on the original audit channel message.
   try {
-    const disabledRow = _buildDisabledAdminRow(elevationId);
-    await interaction.message.edit({ components: [disabledRow] });
+    await interaction.message.edit({ components: [_buildDisabledAdminRow(elevationId)] });
   } catch {
     // Non-fatal
+  }
+
+  // Disable the revoke button on the alert channel message.
+  if (config.alertChannelId && elevation.alertMessageId) {
+    try {
+      const alertChannel = await client.channels.fetch(config.alertChannelId) as TextChannel;
+      if (alertChannel?.isTextBased()) {
+        const alertMsg = await alertChannel.messages.fetch(elevation.alertMessageId);
+        await alertMsg.edit({ components: [_buildDisabledAlertRow(elevationId, "Revoked")] });
+      }
+    } catch {
+      // Non-fatal — message may have been deleted
+    }
   }
 
   await interaction.editReply({
@@ -257,12 +356,24 @@ export async function handleRemovePermBlock(
     },
   });
 
-  // Disable both action buttons on the original elevation-granted message.
+  // Disable both action buttons on the original audit channel message.
   try {
-    const disabledRow = _buildDisabledAdminRow(elevationId);
-    await interaction.message.edit({ components: [disabledRow] });
+    await interaction.message.edit({ components: [_buildDisabledAdminRow(elevationId)] });
   } catch {
     // Non-fatal
+  }
+
+  // Disable the revoke button on the alert channel message.
+  if (config.alertChannelId && elevation.alertMessageId) {
+    try {
+      const alertChannel = await client.channels.fetch(config.alertChannelId) as TextChannel;
+      if (alertChannel?.isTextBased()) {
+        const alertMsg = await alertChannel.messages.fetch(elevation.alertMessageId);
+        await alertMsg.edit({ components: [_buildDisabledAlertRow(elevationId, "Revoked")] });
+      }
+    } catch {
+      // Non-fatal — message may have been deleted
+    }
   }
 
   await interaction.editReply({
@@ -273,8 +384,18 @@ export async function handleRemovePermBlock(
 }
 
 // ---------------------------------------------------------------------------
-// Internal helper — builds a disabled version of the admin action row
+// Internal helpers
 // ---------------------------------------------------------------------------
+function _buildDisabledAlertRow(elevationId: string, label: string): ActionRowBuilder<ButtonBuilder> {
+  const btn = new ButtonBuilder()
+    .setCustomId(`self_revoke:${elevationId}`)
+    .setLabel(label)
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(true);
+
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(btn);
+}
+
 function _buildDisabledAdminRow(elevationId: string): ActionRowBuilder<ButtonBuilder> {
   const removeBtn = new ButtonBuilder()
     .setCustomId(`remove_perm:${elevationId}`)

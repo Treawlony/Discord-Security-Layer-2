@@ -66,6 +66,7 @@ function eventTypeEmoji(type: AuditEventType): string {
     ELEVATION_ADMIN_REVOKED: "🚫",
     ELEVATION_ADMIN_REVOKED_BLOCKED: "🔴",
     ELEVATION_BLOCKED: "⛔",
+    ELEVATION_SELF_REVOKED: "↩️",
   };
   return map[type] ?? "📋";
 }

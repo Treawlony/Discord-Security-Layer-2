@@ -134,6 +134,16 @@ npm run lint
 
 The project is deployed via **Portainer GitOps**: Portainer pulls `docker-compose.yml` directly from the GitHub repo and builds/runs the stack. No `.env` file is used in production — all variables are set in the Portainer stack UI.
 
+### Branch / Environment Strategy
+
+| Branch | Bot | Purpose |
+|---|---|---|
+| `develop` | Staging bot | All new work lands here first. Portainer staging stack tracks this branch. |
+| `master` | Production bot | Stable, user-confirmed releases only. Merge from `develop` after confirmation. |
+
+- All development, PRs, and feature branches target `develop`.
+- Never commit directly to `master`. Merge `develop → master` only after the staging bot has been confirmed working.
+
 ### Local development (Docker)
 
 ```bash

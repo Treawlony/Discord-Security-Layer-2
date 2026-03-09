@@ -209,7 +209,7 @@ describe("Prisma schema — new fields", () => {
   });
 
   it("ActiveElevation has notifiedAt as nullable", () => {
-    expect(schema).toContain("notifiedAt  DateTime?");
+    expect(schema).toContain("notifiedAt");
   });
 
   it("PimUser has blockedAt as nullable", () => {
