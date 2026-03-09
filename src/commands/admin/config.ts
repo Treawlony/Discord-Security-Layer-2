@@ -23,7 +23,7 @@ export const data = new SlashCommandBuilder()
   .addStringOption((opt) =>
     opt
       .setName("session-duration")
-      .setDescription("Duration before elevated role is removed (e.g. 30m, 2h, 1d)")
+      .setDescription("Duration before elevated role is removed (e.g. 30, 30m, 2h, 1d — bare number = minutes)")
   )
   .addIntegerOption((opt) =>
     opt
@@ -35,7 +35,7 @@ export const data = new SlashCommandBuilder()
   .addStringOption((opt) =>
     opt
       .setName("notify-before")
-      .setDescription("Warning time before expiry (e.g. 5m, 1h). Use 0 to disable")
+      .setDescription("Warning time before expiry (e.g. 5, 5m, 1h — bare number = minutes). Use 0 to disable")
   )
   .addChannelOption((opt) =>
     opt.setName("alert-channel").setDescription("User-facing channel: elevation granted pings and expiry warnings with Extend Session button")
@@ -81,7 +81,7 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     const parsed = parseDuration(sessionDurationRaw);
     if (parsed === null) {
       return interaction.editReply(
-        `Invalid session duration \`${sessionDurationRaw}\`. Use a number with a unit suffix, e.g. \`30m\`, \`2h\`, \`1d\`.`
+        `Invalid session duration \`${sessionDurationRaw}\`. Use a number (e.g. \`30\` = 30 minutes) or add a unit suffix: \`30m\`, \`2h\`, \`1d\`.`
       );
     }
     if (parsed < SESSION_DURATION_MIN_SEC || parsed > SESSION_DURATION_MAX_SEC) {
@@ -106,7 +106,7 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     const parsed = parseDuration(notifyBeforeRaw);
     if (parsed === null) {
       return interaction.editReply(
-        `Invalid notify-before value \`${notifyBeforeRaw}\`. Use a number with a unit suffix (e.g. \`5m\`, \`1h\`) or \`0\` to disable.`
+        `Invalid notify-before value \`${notifyBeforeRaw}\`. Use a number (e.g. \`5\` = 5 minutes), a unit suffix (\`5m\`, \`1h\`), or \`0\` to disable.`
       );
     }
     if (parsed !== 0 && parsed < NOTIFY_BEFORE_MIN_NONZERO_SEC) {

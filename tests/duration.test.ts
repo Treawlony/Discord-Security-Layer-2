@@ -66,9 +66,11 @@ describe("parseDuration — invalid inputs", () => {
     expect(parseDuration("")).toBeNull();
   });
 
-  it("returns null for bare number without unit (other than 0)", () => {
-    expect(parseDuration("60")).toBeNull();
-    expect(parseDuration("120")).toBeNull();
+  it("treats bare integer as minutes", () => {
+    expect(parseDuration("30")).toBe(1800);
+    expect(parseDuration("60")).toBe(3600);
+    expect(parseDuration("120")).toBe(7200);
+    expect(parseDuration("1")).toBe(60);
   });
 
   it("returns null for unknown unit suffix", () => {
