@@ -196,6 +196,7 @@ The bot is designed to run in multiple Discord servers simultaneously. Every fea
 - All user-facing replies must use `flags: MessageFlags.Ephemeral` (import `MessageFlags` from `discord.js`). The `ephemeral: true` option is deprecated in discord.js v14+ and must not be used.
 - `interaction.reply()` and `interaction.followUp()` require `flags: MessageFlags.Ephemeral as number` (explicit cast). `deferReply()` accepts `MessageFlags.Ephemeral` without a cast. Do not remove the `as number` cast from `reply()`/`followUp()` calls.
 - Always `deferReply` at the start of command handlers
+- **Collecting component interactions on ephemeral replies**: never use `interaction.channel?.createMessageComponentCollector()` — it silently returns `undefined` when the channel is not cached (the norm for ephemeral messages). Always use `await interaction.fetchReply()` to get the reply message, then call `replyMessage.awaitMessageComponent({ ... })` on that object.
 - Never store raw passwords — always hash before writing to DB
 - Write an `AuditLog` entry for every security-relevant event
 - Non-fatal errors (e.g. posting to a Discord channel) should be caught and logged, not thrown
