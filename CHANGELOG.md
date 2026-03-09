@@ -10,6 +10,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.3.0] — 2026-03-09
+
+### Added
+- **"Revoke Early" button in alert channel** — when a role is granted, the alert channel message now includes a **Revoke Early** button. Only the elevated user themselves can click it. Clicking ends the session immediately (removes the Discord role, deletes the `ActiveElevation` record) without touching the user's password, eligible roles, or any other account state.
+- **`ELEVATION_SELF_REVOKED` audit event** — new `AuditEventType` value written when a user self-revokes. Metadata is minimal (no admin involved).
+- **`alertMessageId` / `auditMessageId` on `ActiveElevation`** — two new nullable `String?` columns. After elevation is granted both channel message IDs are stored so any session-ending path can reach back and clean up the messages.
+- **`self_revoke:` button routing** — new branch in `interactionCreate.ts` routes the self-revoke button to `handleSelfRevoke` in `buttonHandlers.ts`. Checked before `remove_perm_block:` to avoid any future prefix ambiguity.
+- **Bare-integer duration default (minutes)** — `parseDuration` now treats a plain integer with no unit suffix as minutes (e.g. `"30"` → 1800 s). The `"0"` disable-case is still handled first (unchanged).
+
+### Changed
+- **Buttons removed on session end** — all session-ending paths (self-revoke, admin-revoke via button, natural expiry) now edit both the alert and audit channel messages with `components: []`, removing all buttons entirely. Previously they were greyed-out disabled buttons, which caused user confusion about their account state.
+- **Audit message content updated on self-revoke** — when a user self-revokes, the audit channel message content is updated to "Session Self-Revoked — @user's **Role** session was ended early by the user. Role removed; eligibility intact." This prevents admins from accidentally running `/watchtower-revoke` thinking manual cleanup is required.
+- `_buildDisabledAlertRow` and `_buildDisabledAdminRow` helpers removed from `buttonHandlers.ts` (no longer needed).
+- `/watchtower-config` `session-duration` and `notify-before` option descriptions updated to mention that bare integers are treated as minutes.
+
+### Fixed
+- Alert channel message no longer shows a greyed-out "Revoked" or "Expired" button after a session ends — button is fully removed.
+- Audit channel message no longer shows greyed-out "Remove Permission" buttons after a session ends — buttons fully removed.
+
+### Migration
+- `prisma/migrations/20260309000001_add_elevation_self_revoked_event/migration.sql` — additive only:
+  - `ALTER TYPE "AuditEventType" ADD VALUE 'ELEVATION_SELF_REVOKED'`
+- `prisma/migrations/20260309000002_add_elevation_message_ids/migration.sql` — additive only:
+  - `"alertMessageId" TEXT` (nullable) on `active_elevations`
+  - `"auditMessageId" TEXT` (nullable) on `active_elevations`
+
+---
+
 ## [0.2.0] — 2026-03-09
 
 ### Added
