@@ -12,6 +12,12 @@ import { db } from "./database";
 import { writeAuditLog } from "./audit";
 import { getOrCreateGuildConfig } from "./guildConfig";
 import { isWatchtowerAdmin } from "./permissions";
+import {
+  buildExtendedSessionEmbed,
+  buildSelfRevokedAuditEmbed,
+  buildAdminRevokedAuditEmbed,
+  buildAdminRevokedBlockedAuditEmbed,
+} from "./embeds";
 
 // ---------------------------------------------------------------------------
 // handleExtendSession
@@ -76,7 +82,8 @@ export async function handleExtendSession(
     metadata: { newExpiresAt: newExpiresAt.toISOString() },
   });
 
-  // Disable the button on the original warning message so it cannot be clicked again.
+  // Update the original warning message: replace embed with "Session Extended" state
+  // and disable the button so it cannot be clicked again.
   try {
     const disabledButton = new ButtonBuilder()
       .setCustomId(interaction.customId)
@@ -84,7 +91,11 @@ export async function handleExtendSession(
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(true);
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(disabledButton);
-    await interaction.message.edit({ components: [row] });
+    await interaction.message.edit({
+      embeds: [buildExtendedSessionEmbed(elevation.pimUser.discordUserId, elevation.roleName, newExpiresAt)],
+      content: "",
+      components: [row],
+    });
   } catch {
     // Non-fatal — original message may have been deleted
   }
@@ -171,7 +182,8 @@ export async function handleSelfRevoke(
       if (auditChannel?.isTextBased()) {
         const auditMsg = await auditChannel.messages.fetch(elevation.auditMessageId);
         await auditMsg.edit({
-          content: `↩️ **Session Self-Revoked** — \`${elevation.pimUser.discordUserId}\`'s **${elevation.roleName}** session was ended early by the user. Role removed; eligibility intact.`,
+          embeds: [buildSelfRevokedAuditEmbed(elevation.pimUser.discordUserId, elevation.roleName)],
+          content: "",
           components: [],
         });
       }
@@ -252,9 +264,13 @@ export async function handleRemovePerm(
     },
   });
 
-  // Disable both action buttons on the original audit channel message.
+  // Replace the audit channel message embed with "Permission Removed" state and strip buttons.
   try {
-    await interaction.message.edit({ components: [] });
+    await interaction.message.edit({
+      embeds: [buildAdminRevokedAuditEmbed(elevation.pimUser.discordUserId, elevation.roleName)],
+      content: "",
+      components: [],
+    });
   } catch {
     // Non-fatal
   }
@@ -361,9 +377,13 @@ export async function handleRemovePermBlock(
     },
   });
 
-  // Disable both action buttons on the original audit channel message.
+  // Replace the audit channel message embed with "Permission Removed and User Blocked" state and strip buttons.
   try {
-    await interaction.message.edit({ components: [] });
+    await interaction.message.edit({
+      embeds: [buildAdminRevokedBlockedAuditEmbed(elevation.pimUser.discordUserId, elevation.roleName)],
+      content: "",
+      components: [],
+    });
   } catch {
     // Non-fatal
   }

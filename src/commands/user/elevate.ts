@@ -15,6 +15,7 @@ import { db } from "../../lib/database";
 import { verifyPassword } from "../../lib/crypto";
 import { writeAuditLog } from "../../lib/audit";
 import { getOrCreateGuildConfig } from "../../lib/guildConfig";
+import { buildElevationGrantedAuditEmbed, buildElevationGrantedAlertEmbed } from "../../lib/embeds";
 
 // ---------------------------------------------------------------------------
 // Command definition
@@ -237,8 +238,7 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
         );
 
         const auditMsg = await auditChannel.send({
-          content:
-            `⬆️ **PIM Elevation** — \`${discordUserId}\` has been granted **${eligible.roleName}** until <t:${expiryUnix}:R>`,
+          embeds: [buildElevationGrantedAuditEmbed(discordUserId, eligible.roleName, expiresAt)],
           components: [adminRow],
         });
         auditMessageId = auditMsg.id;
@@ -261,7 +261,7 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
         const alertRow = new ActionRowBuilder<ButtonBuilder>().addComponents(selfRevokeBtn);
 
         const alertMsg = await alertChannel.send({
-          content: `⬆️ You have been granted **${eligible.roleName}** until <t:${expiryUnix}:R>.`,
+          embeds: [buildElevationGrantedAlertEmbed(discordUserId, eligible.roleName, expiresAt)],
           components: [alertRow],
         });
         alertMessageId = alertMsg.id;

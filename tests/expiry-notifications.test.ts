@@ -388,13 +388,18 @@ describe("handleSelfRevoke — session-only revocation (Bug 1 regression)", () =
   const fs = require("fs");
   const path = require("path");
   const src = path.resolve(__dirname, "../src/lib/buttonHandlers.ts");
+  // embeds.ts holds the "Session Self-Revoked" / "eligibility intact" strings now
+  // (moved there as part of the embed-notification refactor, EPIC-006).
+  const embedsSrc = path.resolve(__dirname, "../src/lib/embeds.ts");
   let selfRevokeFn: string;
+  let embedsSource: string;
 
   beforeAll(() => {
     const source: string = fs.readFileSync(src, "utf-8");
     const fnStart = source.indexOf("export async function handleSelfRevoke");
     const fnEnd = source.indexOf("\n// ---------------------------------------------------------------------------\n// handleRemovePerm");
     selfRevokeFn = source.slice(fnStart, fnEnd);
+    embedsSource = fs.readFileSync(embedsSrc, "utf-8");
   });
 
   it("exports handleSelfRevoke", () => {
@@ -443,8 +448,11 @@ describe("handleSelfRevoke — session-only revocation (Bug 1 regression)", () =
   });
 
   it("audit message content tells admins the session was self-revoked and eligibility is intact", () => {
-    expect(selfRevokeFn).toContain("Session Self-Revoked");
-    expect(selfRevokeFn).toContain("eligibility intact");
+    // The strings live in embeds.ts (buildSelfRevokedAuditEmbed) and are called from
+    // handleSelfRevoke via the function reference — check both files.
+    const combinedSource = selfRevokeFn + embedsSource;
+    expect(combinedSource).toContain("Session Self-Revoked");
+    expect(combinedSource).toContain("eligibility intact");
   });
 
   it("audit message buttons are also removed (components: [])", () => {

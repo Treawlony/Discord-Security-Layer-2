@@ -8,6 +8,7 @@ import {
 } from "discord.js";
 import { db } from "../lib/database";
 import { writeAuditLog } from "../lib/audit";
+import { buildExpiryWarningAlertEmbed, buildExpiryWarningAuditEmbed } from "../lib/embeds";
 
 export function startExpiryJob(client: Client): ScheduledTask {
   // Run every minute to check for expiry warnings and expired elevations.
@@ -60,8 +61,6 @@ async function runWarningScan(client: Client): Promise<void> {
         data: { notifiedAt: new Date() },
       });
 
-      const expiryUnix = Math.floor(elevation.expiresAt.getTime() / 1000);
-
       // Alert channel — user-facing ping with Extend Session button.
       if (config.alertChannelId) {
         try {
@@ -75,9 +74,11 @@ async function runWarningScan(client: Client): Promise<void> {
             const row = new ActionRowBuilder<ButtonBuilder>().addComponents(extendButton);
 
             await alertChannel.send({
-              content:
-                `⏰ <@${elevation.pimUser.discordUserId}>, your **${elevation.roleName}** elevation expires ` +
-                `<t:${expiryUnix}:R>. Click **Extend Session** to reset your timer.`,
+              embeds: [buildExpiryWarningAlertEmbed(
+                elevation.pimUser.discordUserId,
+                elevation.roleName,
+                elevation.expiresAt
+              )],
               components: [row],
             });
           }
@@ -91,9 +92,13 @@ async function runWarningScan(client: Client): Promise<void> {
         try {
           const auditChannel = await client.channels.fetch(config.auditChannelId) as TextChannel;
           if (auditChannel?.isTextBased()) {
-            await auditChannel.send(
-              `⏰ **Expiry Warning** — \`${elevation.pimUser.discordUserId}\`'s **${elevation.roleName}** elevation expires <t:${expiryUnix}:R>.`
-            );
+            await auditChannel.send({
+              embeds: [buildExpiryWarningAuditEmbed(
+                elevation.pimUser.discordUserId,
+                elevation.roleName,
+                elevation.expiresAt
+              )],
+            });
           }
         } catch (err) {
           console.error(`[Jobs] Warning scan: failed to post to audit channel for guild ${config.guildId}`, err);

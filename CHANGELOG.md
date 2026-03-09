@@ -10,6 +10,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.1.0] — 2026-03-09
+
+### Added
+
+- **Rich embed notifications** (`src/lib/embeds.ts`, new) — all Discord channel-posted messages (audit log, elevation-granted, expiry warning, session-end edits) now use Discord `EmbedBuilder` embeds instead of plain-text strings. Embeds render `<@userId>` as a clickable mention without triggering a notification ping, restoring readable user references across all channel messages.
+  - New shared embed builder module `src/lib/embeds.ts` with 9 exported pure builder functions and 4 colour constants.
+  - Colour semantics: green (`0x57F287`) for granted/active/extended events, orange (`0xFEE75C`) for warnings, red (`0xED4245`) for revokes/blocks, grey (`0x95A5A6`) for neutral/ended events.
+  - Every embed includes a Discord footer timestamp (`.setTimestamp()`).
+
+### Changed
+
+- **`src/lib/audit.ts`** — default audit channel post changed from a plain-text `channel.send(string)` to `channel.send({ embeds: [buildAuditLogEmbed(...)] })`. The `skipChannelPost` flag and DB write behaviour are unchanged.
+- **`src/commands/user/elevate.ts`** — elevation-granted messages to the audit channel and alert channel now send embeds instead of plain-text content strings. Buttons remain attached via `components`. `auditMessageId` / `alertMessageId` storage is unchanged.
+- **`src/jobs/expireElevations.ts`** — expiry warning sends to both alert and audit channels now use embeds. Expiry scan message edits (`components: []` to strip buttons) are unchanged — the embed body is preserved in place by Discord when only components are updated.
+- **`src/lib/buttonHandlers.ts`** — session-end message edits now replace the original embed with a contextual state embed:
+  - `handleExtendSession`: expiry-warning message edited with a green "Session Extended" embed.
+  - `handleSelfRevoke`: audit message edited with a grey "Session Self-Revoked" embed.
+  - `handleRemovePerm`: audit message edited with a red "Permission Removed" embed.
+  - `handleRemovePermBlock`: audit message edited with a red "Permission Removed and User Blocked" embed.
+  - All edits include `content: ""` to clear any stale plain-text from pre-v1.1.0 messages.
+  - Alert channel message edits remain `{ components: [] }` only (original embed preserved).
+
+### Migration
+
+No database schema changes. No new environment variables. No Discord permission changes required.
+
+---
+
 ## [1.0.0] — 2026-03-09
 
 This is the first stable production release of Discord Watchtower. The core PIM flow, admin tooling, audit infrastructure, and operational hardening features have been developed and validated across the v0.0.x–v0.4.x series. v1.0.0 represents the point at which the feature set is considered complete and production-ready for multi-guild deployment.
