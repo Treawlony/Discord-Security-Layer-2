@@ -182,151 +182,151 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     components: [row],
   });
 
-  // Collect the selection (30s timeout)
-  const collector = interaction.channel?.createMessageComponentCollector({
-    componentType: ComponentType.StringSelect,
-    filter: (i) => i.user.id === discordUserId && i.customId === "elevate_role_select",
-    time: 30_000,
-    max: 1,
-  });
+  // Collect the selection (30s timeout) — fetch the reply message and await a
+  // component on it directly, so we don't depend on interaction.channel being cached.
+  const replyMessage = await interaction.fetchReply();
+  let selectInteraction;
+  try {
+    selectInteraction = await replyMessage.awaitMessageComponent({
+      componentType: ComponentType.StringSelect,
+      filter: (i) => i.user.id === discordUserId && i.customId === "elevate_role_select",
+      time: 30_000,
+    });
+  } catch {
+    // Collector timed out (no selection within 30s)
+    await interaction.editReply({ content: "Elevation timed out. Run `/elevate` again.", components: [] });
+    return;
+  }
 
-  collector?.on("collect", async (selectInteraction) => {
-    await selectInteraction.deferUpdate();
+  await selectInteraction.deferUpdate();
 
-    const roleId = selectInteraction.values[0];
-    const eligible = availableRoles.find((r) => r.roleId === roleId);
-    if (!eligible) return;
+  const roleId = selectInteraction.values[0];
+  const eligible = availableRoles.find((r) => r.roleId === roleId);
+  if (!eligible) return;
 
-    const expiresAt = new Date(Date.now() + config.sessionDurationSec * 1000);
+  const expiresAt = new Date(Date.now() + config.sessionDurationSec * 1000);
 
-    try {
-      const guild = await client.guilds.fetch(guildId);
+  try {
+    const guild = await client.guilds.fetch(guildId);
 
-      // Verify the bot can manage this role before attempting assignment
-      const botMember = guild.members.me ?? (await guild.members.fetchMe());
-      const targetRole = guild.roles.cache.get(roleId) ?? (await guild.roles.fetch(roleId));
-      if (!targetRole || targetRole.position >= botMember.roles.highest.position) {
-        await interaction.editReply({
-          content:
-            `Cannot grant **${eligible.roleName}** — this role is at or above the bot in the server's role hierarchy.\n\n` +
-            `Ask an administrator to go to **Server Settings → Roles** and drag the bot's role above **${eligible.roleName}**.`,
-          components: [],
-        });
-        return;
-      }
-
-      const member = await guild.members.fetch(discordUserId);
-      await member.roles.add(roleId, `PIM elevation by ${interaction.user.tag}`);
-    } catch {
-      await interaction.editReply({ content: "Failed to assign role. Check bot permissions.", components: [] });
+    // Verify the bot can manage this role before attempting assignment
+    const botMember = guild.members.me ?? (await guild.members.fetchMe());
+    const targetRole = guild.roles.cache.get(roleId) ?? (await guild.roles.fetch(roleId));
+    if (!targetRole || targetRole.position >= botMember.roles.highest.position) {
+      await interaction.editReply({
+        content:
+          `Cannot grant **${eligible.roleName}** — this role is at or above the bot in the server's role hierarchy.\n\n` +
+          `Ask an administrator to go to **Server Settings → Roles** and drag the bot's role above **${eligible.roleName}**.`,
+        components: [],
+      });
       return;
     }
 
-    const elevation = await db.activeElevation.upsert({
-      where: { pimUserId_roleId: { pimUserId: pimUser.id, roleId } },
-      update: { expiresAt, elevatedAt: new Date(), notifiedAt: null },
-      create: { pimUserId: pimUser.id, roleId, roleName: eligible.roleName, guildId, expiresAt },
-    });
+    const member = await guild.members.fetch(discordUserId);
+    await member.roles.add(roleId, `PIM elevation by ${interaction.user.tag}`);
+  } catch {
+    await interaction.editReply({ content: "Failed to assign role. Check bot permissions.", components: [] });
+    return;
+  }
 
-    // skipChannelPost: the interactive message with admin buttons is posted below;
-    // we do not want writeAuditLog to also emit a plain-text echo to the same channel.
-    await writeAuditLog(client, {
-      guildId,
-      discordUserId,
-      pimUserId: pimUser.id,
-      eventType: "ELEVATION_GRANTED",
-      roleId,
-      roleName: eligible.roleName,
-      metadata: { expiresAt: expiresAt.toISOString() },
-      skipChannelPost: true,
-    });
-
-    // Fetch fresh config to get channel IDs
-    const freshConfig = await getOrCreateGuildConfig(guildId);
-    const expiryUnix = Math.floor(expiresAt.getTime() / 1000);
-
-    let auditMessageId: string | undefined;
-    let alertMessageId: string | undefined;
-
-    // Audit channel — admin-facing log with Remove Permission / Remove Permission and Block buttons.
-    if (freshConfig.auditChannelId) {
-      try {
-        const auditChannel = await client.channels.fetch(freshConfig.auditChannelId) as TextChannel;
-        if (auditChannel?.isTextBased()) {
-          const removeBtn = new ButtonBuilder()
-            .setCustomId(`remove_perm:${elevation.id}`)
-            .setLabel("Remove Permission")
-            .setStyle(ButtonStyle.Danger);
-
-          const removeBlockBtn = new ButtonBuilder()
-            .setCustomId(`remove_perm_block:${elevation.id}`)
-            .setLabel("Remove Permission and Block")
-            .setStyle(ButtonStyle.Danger);
-
-          const adminRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-            removeBtn,
-            removeBlockBtn
-          );
-
-          const auditMsg = await auditChannel.send({
-            content:
-              `⬆️ **PIM Elevation** — <@${discordUserId}> has been granted **${eligible.roleName}** until <t:${expiryUnix}:R>`,
-            components: [adminRow],
-          });
-          auditMessageId = auditMsg.id;
-        }
-      } catch (err) {
-        console.error("[elevate] Failed to post to audit channel:", err);
-      }
-    }
-
-    // Alert channel — user-facing ping with a self-revoke button.
-    if (freshConfig.alertChannelId) {
-      try {
-        const alertChannel = await client.channels.fetch(freshConfig.alertChannelId) as TextChannel;
-        if (alertChannel?.isTextBased()) {
-          const selfRevokeBtn = new ButtonBuilder()
-            .setCustomId(`self_revoke:${elevation.id}`)
-            .setLabel("Revoke Early")
-            .setStyle(ButtonStyle.Secondary);
-
-          const alertRow = new ActionRowBuilder<ButtonBuilder>().addComponents(selfRevokeBtn);
-
-          const alertMsg = await alertChannel.send({
-            content: `⬆️ <@${discordUserId}>, you have been granted **${eligible.roleName}** until <t:${expiryUnix}:R>.`,
-            components: [alertRow],
-          });
-          alertMessageId = alertMsg.id;
-        }
-      } catch (err) {
-        console.error("[elevate] Failed to post to alert channel:", err);
-      }
-    }
-
-    // Persist message IDs so sessions endings can disable the buttons.
-    if (auditMessageId || alertMessageId) {
-      try {
-        await db.activeElevation.update({
-          where: { id: elevation.id },
-          data: {
-            auditMessageId: auditMessageId ?? null,
-            alertMessageId: alertMessageId ?? null,
-          },
-        });
-      } catch (err) {
-        console.error("[elevate] Failed to store message IDs on elevation:", err);
-      }
-    }
-
-    await interaction.editReply({
-      content: `You have been elevated to **${eligible.roleName}** until <t:${expiryUnix}:R>.`,
-      components: [],
-    });
+  const elevation = await db.activeElevation.upsert({
+    where: { pimUserId_roleId: { pimUserId: pimUser.id, roleId } },
+    update: { expiresAt, elevatedAt: new Date(), notifiedAt: null },
+    create: { pimUserId: pimUser.id, roleId, roleName: eligible.roleName, guildId, expiresAt },
   });
 
-  collector?.on("end", async (collected) => {
-    if (collected.size === 0) {
-      await interaction.editReply({ content: "Elevation timed out. Run `/elevate` again.", components: [] });
+  // skipChannelPost: the interactive message with admin buttons is posted below;
+  // we do not want writeAuditLog to also emit a plain-text echo to the same channel.
+  await writeAuditLog(client, {
+    guildId,
+    discordUserId,
+    pimUserId: pimUser.id,
+    eventType: "ELEVATION_GRANTED",
+    roleId,
+    roleName: eligible.roleName,
+    metadata: { expiresAt: expiresAt.toISOString() },
+    skipChannelPost: true,
+  });
+
+  // Fetch fresh config to get channel IDs
+  const freshConfig = await getOrCreateGuildConfig(guildId);
+  const expiryUnix = Math.floor(expiresAt.getTime() / 1000);
+
+  let auditMessageId: string | undefined;
+  let alertMessageId: string | undefined;
+
+  // Audit channel — admin-facing log with Remove Permission / Remove Permission and Block buttons.
+  if (freshConfig.auditChannelId) {
+    try {
+      const auditChannel = await client.channels.fetch(freshConfig.auditChannelId) as TextChannel;
+      if (auditChannel?.isTextBased()) {
+        const removeBtn = new ButtonBuilder()
+          .setCustomId(`remove_perm:${elevation.id}`)
+          .setLabel("Remove Permission")
+          .setStyle(ButtonStyle.Danger);
+
+        const removeBlockBtn = new ButtonBuilder()
+          .setCustomId(`remove_perm_block:${elevation.id}`)
+          .setLabel("Remove Permission and Block")
+          .setStyle(ButtonStyle.Danger);
+
+        const adminRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+          removeBtn,
+          removeBlockBtn
+        );
+
+        const auditMsg = await auditChannel.send({
+          content:
+            `⬆️ **PIM Elevation** — <@${discordUserId}> has been granted **${eligible.roleName}** until <t:${expiryUnix}:R>`,
+          components: [adminRow],
+        });
+        auditMessageId = auditMsg.id;
+      }
+    } catch (err) {
+      console.error("[elevate] Failed to post to audit channel:", err);
     }
+  }
+
+  // Alert channel — user-facing ping with a self-revoke button.
+  if (freshConfig.alertChannelId) {
+    try {
+      const alertChannel = await client.channels.fetch(freshConfig.alertChannelId) as TextChannel;
+      if (alertChannel?.isTextBased()) {
+        const selfRevokeBtn = new ButtonBuilder()
+          .setCustomId(`self_revoke:${elevation.id}`)
+          .setLabel("Revoke Early")
+          .setStyle(ButtonStyle.Secondary);
+
+        const alertRow = new ActionRowBuilder<ButtonBuilder>().addComponents(selfRevokeBtn);
+
+        const alertMsg = await alertChannel.send({
+          content: `⬆️ <@${discordUserId}>, you have been granted **${eligible.roleName}** until <t:${expiryUnix}:R>.`,
+          components: [alertRow],
+        });
+        alertMessageId = alertMsg.id;
+      }
+    } catch (err) {
+      console.error("[elevate] Failed to post to alert channel:", err);
+    }
+  }
+
+  // Persist message IDs so session endings can disable the buttons.
+  if (auditMessageId || alertMessageId) {
+    try {
+      await db.activeElevation.update({
+        where: { id: elevation.id },
+        data: {
+          auditMessageId: auditMessageId ?? null,
+          alertMessageId: alertMessageId ?? null,
+        },
+      });
+    } catch (err) {
+      console.error("[elevate] Failed to store message IDs on elevation:", err);
+    }
+  }
+
+  await interaction.editReply({
+    content: `You have been elevated to **${eligible.roleName}** until <t:${expiryUnix}:R>.`,
+    components: [],
   });
 }
