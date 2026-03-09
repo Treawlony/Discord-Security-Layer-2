@@ -89,6 +89,14 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
         `Session duration must be between **1m** (60s) and **1d** (86400s). Got: \`${sessionDurationRaw}\`.`
       );
     }
+    // If notify-before is not being changed, check new duration against existing notifyBeforeSec
+    if (notifyBeforeRaw === null && current.notifyBeforeSec > 0 && parsed <= current.notifyBeforeSec) {
+      return interaction.editReply(
+        `Session duration (\`${sessionDurationRaw}\`) must be greater than the current expiry warning (${formatDuration(current.notifyBeforeSec)}). ` +
+        `Increase session-duration or reduce/disable notify-before first.`
+      );
+    }
+
     sessionDurationSec = parsed;
   }
 

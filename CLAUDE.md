@@ -153,7 +153,6 @@ All variables must be set in **Portainer → Stack → Environment variables** f
 | `POSTGRES_USER` | Yes | PostgreSQL username |
 | `POSTGRES_PASSWORD` | Yes | PostgreSQL password |
 | `POSTGRES_DB` | Yes | PostgreSQL database name |
-| `DEFAULT_SESSION_DURATION_MIN` | No | Elevation session length in minutes (default: 60) |
 | `DEFAULT_LOCKOUT_THRESHOLD` | No | Failed attempts before lockout (default: 5) |
 
 > `DATABASE_URL` is constructed automatically from the Postgres vars — do **not** set it separately in Portainer.
