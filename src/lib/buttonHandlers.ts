@@ -93,7 +93,7 @@ export async function handleExtendSession(
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(disabledButton);
     await interaction.message.edit({
       embeds: [buildExtendedSessionEmbed(elevation.pimUser.discordUserId, elevation.roleName, newExpiresAt)],
-      content: "",
+      content: `<@${elevation.pimUser.discordUserId}>`,
       components: [row],
     });
   } catch {

@@ -419,7 +419,28 @@ describe("buttonHandlers.ts — session-end edits use embeds", () => {
     const fnEnd   = source.indexOf("\nexport async function handleSelfRevoke");
     const fn = source.slice(fnStart, fnEnd);
     expect(fn).toContain("buildExtendedSessionEmbed(");
-    expect(fn).toContain('content: ""');
+  });
+
+  it("handleExtendSession message edit pings the user via content field (regression: BUG-007)", () => {
+    // <@userId> in an embed description does NOT send a notification ping.
+    // The ping must be in the content field of the message.edit() call so Discord
+    // notifies the user when their session is extended.
+    const fnStart = source.indexOf("export async function handleExtendSession");
+    const fnEnd   = source.indexOf("\nexport async function handleSelfRevoke");
+    const fn = source.slice(fnStart, fnEnd);
+    // The content field must contain the user mention, not be empty
+    expect(fn).toContain("content: `<@${elevation.pimUser.discordUserId}>`");
+    expect(fn).not.toContain('content: ""');
+  });
+
+  it("handleExtendSession ping is scoped to its own message.edit only — not a channel.send ping", () => {
+    // The ping should appear in the message.edit call inside the try block,
+    // not in any channel.send or in the final editReply.
+    const fnStart = source.indexOf("export async function handleExtendSession");
+    const fnEnd   = source.indexOf("\nexport async function handleSelfRevoke");
+    const fn = source.slice(fnStart, fnEnd);
+    // Verify the ping mention appears in the function at all
+    expect(fn).toContain("<@${elevation.pimUser.discordUserId}>");
   });
 
   it("handleSelfRevoke edits audit message with buildSelfRevokedAuditEmbed", () => {
@@ -483,6 +504,27 @@ describe("buttonHandlers.ts — session-end edits use embeds", () => {
 
   it("no longer uses old plain-text audit message content string", () => {
     expect(source).not.toContain("Session Self-Revoked** —");
+  });
+
+  it("handleSelfRevoke audit message edit does not ping the user (audit channel is admin-facing)", () => {
+    const fnStart = source.indexOf("export async function handleSelfRevoke");
+    const fnEnd   = source.indexOf("\n// ---------------------------------------------------------------------------\n// handleRemovePerm");
+    const fn = source.slice(fnStart, fnEnd);
+    expect(fn).toContain('content: ""');
+  });
+
+  it("handleRemovePerm audit message edit does not ping anyone (admin-facing channel)", () => {
+    const fnStart = source.indexOf("export async function handleRemovePerm(");
+    const fnEnd   = source.indexOf("\nexport async function handleRemovePermBlock");
+    const fn = source.slice(fnStart, fnEnd);
+    // The interaction.message.edit (audit channel) must have content: ""
+    expect(fn).toContain('content: ""');
+  });
+
+  it("handleRemovePermBlock audit message edit does not ping anyone (admin-facing channel)", () => {
+    const fnStart = source.indexOf("export async function handleRemovePermBlock");
+    const fn = source.slice(fnStart);
+    expect(fn).toContain('content: ""');
   });
 });
 
