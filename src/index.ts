@@ -11,7 +11,11 @@ import { env } from "./lib/env";
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
+    // NOTE: GuildMembers (Server Members Intent) intentionally NOT requested.
+    // All member access is single-fetch-by-ID (guild.members.fetch(userId)) and
+    // role add/remove, which use the REST API and do not require the privileged
+    // gateway intent. Requesting it here would crash login (DisallowedIntents)
+    // whenever the portal toggle is off (e.g. during intent review).
   ],
 });
 
