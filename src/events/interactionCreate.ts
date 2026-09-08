@@ -43,10 +43,15 @@ export async function onInteractionCreate(client: Client, interaction: Interacti
   } catch (err) {
     console.error(`[Command:${interaction.commandName}]`, err);
     const payload = { content: "An error occurred while executing this command.", flags: MessageFlags.Ephemeral as number };
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp(payload);
-    } else {
-      await interaction.reply(payload);
+    try {
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp(payload);
+      } else {
+        await interaction.reply(payload);
+      }
+    } catch (fallbackErr) {
+      // Interaction token likely expired (10062) — nothing more we can do, just log.
+      console.error(`[Command:${interaction.commandName}] failed to send error reply`, fallbackErr);
     }
   }
 }
